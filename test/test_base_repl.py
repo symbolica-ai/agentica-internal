@@ -12,6 +12,7 @@ from agentica_internal.testing.repl.return_tests import *
 from agentica_internal.testing.repl.summary_tests import *
 from agentica_internal.testing.repl.traceback_tests import *
 from agentica_internal.testing.repl.behavior_tests import *
+from agentica_internal.testing.repl.stdout_tests import *
 
 
 def test_delta_added():
@@ -85,3 +86,21 @@ def test_traceback_avoids_agentica():
 
 def test_traceback_includes_other():
     verify_traceback_includes_other()
+
+
+# Stdout capture and isolation tests
+
+def test_basic_stdout_capture():
+    verify_basic_stdout_capture()
+
+def test_multi_print_stdout_capture():
+    verify_multi_print_stdout_capture()
+
+def test_concurrent_repl_print_isolation():
+    verify_concurrent_repl_print_isolation()
+
+def test_concurrent_repl_stdout_write_isolation():
+    verify_concurrent_repl_stdout_write_isolation()
+
+def test_many_concurrent_repls():
+    verify_many_concurrent_repls()

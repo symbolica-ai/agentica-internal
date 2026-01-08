@@ -325,10 +325,21 @@ class class_attribute:
         self.__objclass__ = owner
         self.name = name
 
-    def __get__(self, _, owner: Any = None):
+    def __get__(self, instance, owner: Any = None):
         handle = self.___vhdl___
-        request = ResourceGetAttr(self.__objclass__, self.name)
-        return handle.hdlr(handle, request)
+        if instance is not None:
+            # Instance access (e.g., v_obj.attr) - get from instance
+            # This handles dataclass fields where the class has a default but
+            # the instance has a different value
+            from .handle import obj_handle
+            inst_handle = obj_handle(instance)
+            request = ResourceGetAttr(instance, self.name)
+            return inst_handle.hdlr(inst_handle, request)
+        else:
+            # Class access (e.g., VirtualCls.attr) - get from class
+            request = ResourceGetAttr(self.__objclass__, self.name)
+            return handle.hdlr(handle, request)
+
 
     def __repr__(self):
         return f'<attribute {self.name!r}>'

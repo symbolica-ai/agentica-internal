@@ -1,6 +1,6 @@
 [project]
 name = "agentica-internal"
-version = "0.3.1"
+version = "0.3.2"
 description = "Internal Agentica libraries"
 requires-python = ">=3.12.0,<3.14.0"
 dependencies = [

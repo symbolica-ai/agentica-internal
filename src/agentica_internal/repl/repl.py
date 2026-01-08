@@ -1,27 +1,24 @@
 # fmt: off
 
 import sys
-
+from collections.abc import Iterable, Sequence
 from importlib import import_module
 from io import StringIO
-from collections.abc import Iterable, Sequence
 from time import time_ns
 from types import ModuleType
-from typing import Any, NoReturn, TYPE_CHECKING
-from .repl_var_info import ReplVarInfo
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from ..core import print as P
 from ..core.log import LogBase
-
-from .repl_alias import *
 from .repl_abc import AbstractRepl
+from .repl_alias import *
+from .repl_code import CompileOpts, ReplCode
+from .repl_eval_data import NO_VALUE, ReplError, ReplEvaluationData, ReturnExit
 from .repl_eval_info import ReplEvaluationInfo
-from .repl_hooks import SystemHooks
-from .repl_code import ReplCode, CompileOpts
-from .repl_eval_data import ReplEvaluationData, ReplError, ReturnExit, NO_VALUE
-from .repl_fmt import fmt_print, fmt_exception_tb
-from .repl_vars import ReplVars, ReplSymbols, system_builtins, sorted_list
-
+from .repl_fmt import fmt_exception_tb, fmt_print
+from .repl_hooks import SystemHooks, _delegating_stdout, original_print
+from .repl_var_info import ReplVarInfo
+from .repl_vars import ReplSymbols, ReplVars, sorted_list, system_builtins
 
 __all__ = [
     'BaseRepl',
@@ -139,6 +136,7 @@ class BaseRepl(LogBase, AbstractRepl):
         self.__modules = {}
         self.__loop = None
         self.__stream = stream = StringIO()
+        self.__eval_stdout = None  # sys.stdout at start of evaluation, used to detect pytest redirects
 
         self.hooks = SystemHooks.make(
             sys.stdin, stream, stream,
@@ -268,11 +266,14 @@ class BaseRepl(LogBase, AbstractRepl):
 
     def evaluation_started(self, eval_data: ReplEvaluationData, /) -> None:
         self.curr_eval = eval_data
+        # Save sys.stdout at eval start to detect pytest redirects during evaluation
+        self.__eval_stdout = sys.stdout
         self.on_started(eval_data)
 
     def evaluation_finished(self, eval_data: ReplEvaluationData, /) -> None:
         self.__raised.clear()
         self.curr_eval = None
+        self.__eval_stdout = None
         self.last_eval = eval_data
         # self.history.append(eval_data)
         self.on_finished(eval_data)
@@ -294,7 +295,18 @@ class BaseRepl(LogBase, AbstractRepl):
 
     def should_capture_file(self, file) -> bool:
         if file is None:
-            file = sys.stdout
+            # print() with no file argument - capture unless user redirected sys.stdout
+            # during the current evaluation
+            current_stdout = sys.stdout
+            # If sys.stdout is still what it was when evaluation started, capture
+            # This handles pytest capture (sys.stdout is pytest's capture at eval start)
+            if self.__eval_stdout is not None and current_stdout is self.__eval_stdout:
+                return True
+            # Also capture if sys.stdout is our delegating wrapper or our stream
+            if current_stdout is _delegating_stdout or current_stdout is self.__stream:
+                return True
+            # User redirected sys.stdout to something else (e.g., StringIO), honor that
+            return False
         return file is sys_stdout or file is sys_stderr or file is self.__stream
 
     def print_hook(self, *args, sep: str = ' ', end='\n', file=None, flush: bool = False) -> None:
@@ -420,10 +432,7 @@ class BaseRepl(LogBase, AbstractRepl):
             self.__modules[module.__name__] = module
 
     def load_module(self, name: str) -> ModuleType:
-        allowed = self.allowed_modules()
-        if name not in allowed:
-            f_allowed = '\n'.join(allowed)
-            raise ImportError(f'Module {name!r} not present. Known modules:\n{f_allowed}')
+        self.log(f"load_module: {name}")
         return import_module(name)
 
     def allowed_modules(self) -> list[str]:
@@ -590,6 +599,9 @@ def all_system_modules() -> list[str]:
 ALL_SYSTEM_MODULES = all_system_modules()
 
 builtin_dir = dir
-builtin_print = print
+# Use the original print function, not the thread-local wrapper that was installed
+# by repl_hooks.py. This prevents infinite recursion in print_hook's fallback path.
+builtin_print = original_print
+# Use the thread-local wrappers for identity comparison in should_capture_file
 sys_stdout = sys.stdout
 sys_stderr = sys.stderr
