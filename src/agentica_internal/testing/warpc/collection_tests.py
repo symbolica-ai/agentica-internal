@@ -55,7 +55,7 @@ type_get = type.__getattribute__
 
 async def verify_sub_class_can_instantiate(cls: type):
 
-    pair = DebugWorld.connected_pair(logging='ALL')
+    pair = DebugWorld.connected_pair(logging=False)
 
     async with pair:
 
@@ -84,7 +84,7 @@ async def verify_sub_class_can_instantiate(cls: type):
 
 async def verify_coll_class_can_instantiate(cls: type):
 
-    pair = DebugWorld.connected_pair(logging='ALL')
+    pair = DebugWorld.connected_pair(logging=False)
 
     async with pair:
 

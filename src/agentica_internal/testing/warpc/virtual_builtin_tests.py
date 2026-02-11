@@ -35,7 +35,7 @@ async def verify_virtual_queue():
 
 async def verify_regex_patt():
 
-    pair = DebugWorld.connected_pair(logging=True, qualify_names=False)
+    pair = DebugWorld.connected_pair(logging=False, qualify_names=False)
     async with pair:
         A, B = pair.pipes
 
@@ -53,7 +53,7 @@ async def verify_regex_patt():
 
 async def verify_regex_match():
 
-    pair = DebugWorld.connected_pair(logging=True, qualify_names=False)
+    pair = DebugWorld.connected_pair(logging=False, qualify_names=False)
     async with pair:
         A, B = pair.pipes
 

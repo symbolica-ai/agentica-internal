@@ -3,7 +3,7 @@
 from typing import NoReturn, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .msg.term_resource import ResourceMsg
+    from .msg.term_resource import UserResourceMsg
 
 __all__ = [
     'WarpError',
@@ -21,7 +21,8 @@ __all__ = [
     'WarpShutdown',
     'RemoteException',
     'ForbiddenError',
-    'raise_shutdown'
+    'raise_shutdown',
+    'REM_EXC_CLS_MSG'
 ]
 
 ################################################################################
@@ -49,14 +50,16 @@ class WarpShutdown(WarpError):
 class WarpLambdaEncodingError(WarpEncodingError): ...
 class WarpLambdaDecodingError(WarpDecodingError): ...
 
-class RemoteException(RuntimeError):
-    original_cls_msg: 'ResourceMsg | None'
+################################################################################
 
-    def __init__(self, *args, original_cls_msg: 'ResourceMsg | None' = None):
-        super().__init__(*args)
-        # Carries the originally encoded exception class message so that passing
-        # remote exceptions *back* to the remote can be decoded as the original again.
-        self.original_cls_msg = original_cls_msg
+class RemoteException(RuntimeError):
+
+    if TYPE_CHECKING:
+        ___remote_exception_class_msg___: UserResourceMsg
+
+REM_EXC_CLS_MSG = '___remote_exception_class_msg___'
+
+################################################################################
 
 class ForbiddenError(RuntimeError): ...
 

@@ -20,15 +20,13 @@ __all__ = [
 
 def f_id(i: int) -> str:
     if type(i) is int:
-        #return f'{i:x}' if i >= 0 else f'-{-i:x}'
-        return str(i)
+        return f'{i:x}' if i >= 0 else f'-{-i:x}'
     return '<!id>'
 
 def f_grid(grid: GlobalRID) -> str:
     if type(grid) is tuple and len(grid) == 3:
         wid, fid, rid = grid
-        # return f'{wid:x}:{fid:x}:{rid:x}'
-        return f'{wid}:{fid}:{rid}'
+        return f'{wid:x}:{fid:x}:{rid:x}'
     return '<!grid>'
 
 def f_fkey(fkey: FrameKey) -> str:

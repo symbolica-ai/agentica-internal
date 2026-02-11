@@ -1,12 +1,15 @@
 # fmt: off
 
 import asyncio
-import datetime as DT
 
 from agentica_internal.warpc.worlds.debug_world import *
 
 
 async def verify_plain_old_data():
+
+    import datetime as DT
+    import ipaddress as IP
+    import urllib.parse as UP
 
     pair = DebugWorld.connected_pair(logging=False, qualify_names=False)
     async with pair as B:
@@ -51,9 +54,11 @@ async def verify_plain_old_data():
         await assert_equivalent(DT.timedelta(days=7, hours=3))
         await assert_equivalent(DT.datetime(2023, 12, 25, 14, 30, 45))
 
-        await assert_equivalent((True, False, 5.3, [], 'string', b'bytes'))
+        await assert_equivalent(IP.IPv4Address('192.168.1.1'))
+        await assert_equivalent(IP.IPv6Address('::1'))
+        await assert_equivalent(UP.urlparse('https://example.com/path?q=value'))
 
-    return pair
+        await assert_equivalent((True, False, 5.3, [], 'string', b'bytes'))
 
 
 if __name__ == '__main__':

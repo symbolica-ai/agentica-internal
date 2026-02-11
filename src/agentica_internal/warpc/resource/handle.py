@@ -10,7 +10,9 @@ __all__ = [
     'ExecHandler',
     'ResourceHandle',
     'has_handle',
-    'get_handle'
+    'get_handle',
+    'obj_handle',
+    'cls_handle',
 ]
 
 
@@ -28,7 +30,7 @@ type ExecHandler = Callable[[ResourceHandle, 'ResourceRequest'], Any]
 # ResourceHandle is buried inside a virtual resource (under the VHDL attribute)
 # and contains enough information to resolve resource requests
 class ResourceHandle:
-    __slots__ = 'grid', 'fkey', 'hdlr', 'kind', 'keys', 'open', 'name', 'hash',
+    __slots__ = 'grid', 'fkey', 'hdlr', 'kind', 'keys', 'open', 'name', 'hash', 'size', '_str', '_rep'
 
     # don't wish this to ever be visible
     if TYPE_CHECKING:
@@ -40,9 +42,21 @@ class ResourceHandle:
         open: bool          # True if there might be more keys we don't know about locally
         hash: int           # set the first time __hash__ is executed remotely
         name: str           # the unqualified name of the resource, if any
+        size: int           # set if object has an unchanging `__len__`
+        _str: str           # statically known result of calling __str__
+        _rep: str           # statically known result of calling __repr__
 
     def __repr__(self) -> str:
-        return f"<{self.kind} {f_grid(self.grid)}>"
+        info = self.__debug_info_str__()
+        return f"<{info}>"
+
+    def __debug_info_str__(self) -> str:
+        name = self.name
+        kind = self.kind
+        grid = f_grid(self.grid)
+        if name.endswith('>'):
+            return f'{name[1:-1]} {grid}'
+        return f'{kind} {name!r} {grid}'
 
     __short_str__ = __str__ = __repr__
 

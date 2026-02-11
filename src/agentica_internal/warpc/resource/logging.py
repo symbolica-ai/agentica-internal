@@ -3,6 +3,7 @@ from ...core.print import MEDIUM
 
 __all__ = [
     'LOG_VIRT',
+    'LOG_VSTACK',
     'LOG_ENCR',
     'LOG_DECR',
     'ICON_I',
@@ -11,12 +12,14 @@ __all__ = [
     'ICON_E',
     'ICON_A',
     'ICON_C0',
+    'ICON_CM',
     'ICON_C1',
 ]
 
 ################################################################################
 
 LOG_VIRT = LogFlag('VIRT')
+LOG_VSTACK = LogFlag('__+VSTACK')
 LOG_ENCR = LogFlag('ENCR')
 LOG_DECR = LogFlag('DECR')
 
@@ -33,4 +36,5 @@ ICON_A = color @ '...'  # icon for async
 
 color = MEDIUM.P
 ICON_C0 = color @ '@@@'  # icon for resource creation/description start
+ICON_CM = color @ "---"  # icon for resource enumeration
 ICON_C1 = color @ '^^^'  # icon for resource creation/description end

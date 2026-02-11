@@ -1,13 +1,17 @@
 # fmt: off
 
 from asyncio import Queue
-from pathlib import Path
 
 from ...core.debug import enable_rich_tracebacks
 from ...core.log import LoggingSpec, set_log_tags
 from .__ import *
 
-__all__ = ['ConnectedPair']
+from .debug_pipe import Pipe
+
+__all__ = [
+    'Pair',
+    'Pipe'
+]
 
 
 ################################################################################
@@ -18,49 +22,13 @@ if TYPE_CHECKING:
 ################################################################################
 
 
-class Sending(Awaitable):
-    __slots__ = 'src', 'dst', 'real', 'virt'
-
-    def __init__(self, src, dst, real):
-        self.src = src
-        self.dst = dst
-        self.real = real
-
-    def __await__(self):
-        async def send():
-            if hasattr(self, 'virt'):
-                return self.virt
-            await self.src.channel_send_value(self.real)
-            self.virt = virt = await self.dst.channel_recv_value()
-            return virt
-
-        return send().__await__()
-
-    def __call__(self, *args):
-        assert callable(self.real)
-
-        async def call(orig_args: tuple):
-            sent_fn = await self
-            sent_args = []
-            for orig in orig_args:
-                sent = orig
-                if isinstance(orig, Sending):
-                    if orig.src is self.src:
-                        sent = orig.real
-                    else:
-                        sent = await orig
-                sent_args.append(sent)
-            return sent_fn(*sent_args)
-
-        return call(args)
-
-
-################################################################################
-
-
-class ConnectedPair:
+class Pair:
     a: 'DebugWorld'
     b: 'DebugWorld'
+
+    A: Pipe
+    B: Pipe
+
     _logging: LoggingSpec
     _tmp_file: Path | None
 
@@ -90,6 +58,8 @@ class ConnectedPair:
             print(f"writing debug world msgs to:\n{a_path}\n{b_path}")
             a.write_msgs_to(a_path)
             b.write_msgs_to(b_path)
+        self.A = Pipe(b, a)
+        self.B = Pipe(a, b)
 
     @property
     def tmp_file(self) -> Path:
@@ -108,13 +78,8 @@ class ConnectedPair:
     def pipes(self):
         return self.A, self.B
 
-    def B(self, v):
-        return Sending(self.a, self.b, v)
-
-    def A(self, v):
-        return Sending(self.b, self.a, v)
-
-    __call__ = B
+    def __call__(self, real):
+        return self.B(real)
 
     async def __aenter__(self):
         set_log_tags(self._logging)
@@ -122,7 +87,7 @@ class ConnectedPair:
         b_to_a = Queue()
         self.a.start_msg_loop(a_to_b.put, b_to_a.get)
         self.b.start_msg_loop(b_to_a.put, a_to_b.get)
-        return self
+        return self.B
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self.a.close()
@@ -146,9 +111,9 @@ class ConnectedPair:
         self.b.collect_events(events)
 
     @property
-    def last_a_event(self) -> Event:
-        return self.a.events[-1]
+    def a_event(self):
+        return self.a.last_event()
 
     @property
-    def last_b_event(self) -> Event:
-        return self.b.events[-1]
+    def b_event(self):
+        return self.b.last_event()

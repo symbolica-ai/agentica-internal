@@ -258,6 +258,11 @@ def glob_match_(patt: str | None, default: bool = True) -> Callable[[str], bool]
 
 ###############################################################################
 
-true_fn = constant_(True)
-false_fn = constant_(False)
-none_fn = constant_(None)
+def true_fn(*args, **kwargs):
+    return True
+
+def false_fn(*args, **kwargs):
+    return False
+
+def none_fn(*args, **kwargs):
+    return None

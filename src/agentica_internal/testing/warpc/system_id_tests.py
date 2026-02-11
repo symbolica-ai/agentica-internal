@@ -12,17 +12,29 @@ from agentica_internal.warpc.system import (
     SRID_TO_OBJ,
 )
 
+SKIPPED_PREFIXES = ('CT_', 'SQL_')
+
 
 def verify_system_class_ids():
+    not_found = []
     for cls_name, cls_id in SYS_CLASS_ID_DICT.items():
         srid = cls_id + CLS_OFFSET
-        assert srid in SRID_TO_CLS, f"system class {cls_name} not registered"
+        if srid not in SRID_TO_CLS:
+            if cls_name.startswith(SKIPPED_PREFIXES):
+                continue
+            not_found.append(cls_name)
+    assert len(not_found) == 0, f"system classes not registered: {' '.join(not_found)}"
 
 
 def verify_system_function_ids():
+    not_found = []
     for fun_name, fun_id in SYS_FUNCTION_ID_DICT.items():
         srid = fun_id + FUN_OFFSET
-        assert srid in SRID_TO_FUN, f"system function {fun_name} not registered"
+        if srid not in SRID_TO_FUN:
+            if fun_name.startswith(SKIPPED_PREFIXES):
+                continue
+            not_found.append(fun_name)
+    assert len(not_found) == 0, f"system functions not registered: {' '.join(not_found)}"
 
 
 RENAMED = {'IN__is_coroutine_mark'}

@@ -4,12 +4,16 @@
 This package allows for robust string formatting of objects without accidentally triggering their methods.
 """
 
-from collections.abc import KeysView, ValuesView, Iterable as Iter
+import builtins
+import datetime
+
+from collections.abc import Callable, KeysView, ValuesView, Iterable as Iter
 from typing import Any
 from pathlib import Path
+from functools import partial
 
 from .recursion import no_recursion_limit
-from .sentinels import SENTINEL_TYPES
+from .sentinels import SENTINEL_TYPES, NO_VALUE, getter
 
 from ..cpython.classes.anno import *
 from ..cpython.classes.sys import *
@@ -29,10 +33,16 @@ __all__ = [
     'f_float',
     'f_tag_str',
     'f_object_id',
+    'f_function_call',
+    'f_args_kwargs',
     'f_idsafe',
     'f_exception',
     'f_slot_obj',
+    'f_signature',
+    'f_nanos_time'
 ]
+
+from ..cpython.function import func_annotations
 
 
 ####################################################################################################
@@ -163,7 +173,7 @@ def f_float(f: float) -> str:
         return '0.0'
     f_abs = abs(f)
     if f_abs < 1e-6:
-        return '0.'
+        return '~0.'
     if f_abs < 0.001 or f_abs > 1000:
         return f'{f:.3e}'
     s = f'{f:.3f}'
@@ -180,6 +190,8 @@ def f_exception(e: BaseException, maxw: int = 64) -> str:
     if not isinstance(e, BaseException):
         return '<!exception>'
     f_cls = type(e).__name__
+    if is_virt_obj(e):
+        return f'<virtual {f_cls} exception>'
     try:
         f_err = str(e)
         f_err = f_err.splitlines()[0]
@@ -469,8 +481,23 @@ def _tag_cont(obj: list | tuple | dict | set | frozenset):
 
 ####################################################################################################
 
+def f_function_call(fn: Callable, args: tuple, kwargs: dict | None) -> str:
+    f_fn = f_callable(fn)
+    f_args = f_args_kwargs(args, kwargs)
+    return f'{f_fn}({f_args})'
+
+def f_args_kwargs(args: tuple, kwargs: dict | None) -> str:
+    if not args and not kwargs:
+        return ''
+    f_args = [f_object_id(a) for a in args] if type(args) is tuple else '!args'
+    f_kwargs = [f'{k}={f_object_id(v)}' for k, v in kwargs.items()] if type(kwargs) is dict else '!kwargs'
+    return ', '.join(f_args + f_kwargs)
+
+####################################################################################################
+
 def f_object_id(obj, str_lim: int = 32, colorize: bool = False) -> str:
     with no_recursion_limit:
+        no_ptr = False
         if obj is None:
             return 'None'
         cls = type(obj)
@@ -480,13 +507,14 @@ def f_object_id(obj, str_lim: int = 32, colorize: bool = False) -> str:
             return repr(obj)
         if cls is float:
             f_val = f_float(obj)
-        elif cls is BoundMethodOrFuncC:
-            return repr(obj)
         elif isinstance(obj, BaseException):
-            try:
-                f_val = r_error(obj, str_lim * 2)
-            except:
-                f_val = f'{cls.__name__!r} exception'
+            if is_virt_obj(obj):
+                f_val = f'virtual {cls.__name__!r} exception'
+            else:
+                try:
+                    f_val = r_error(obj, str_lim * 2)
+                except:
+                    f_val = f'{cls.__name__!r} exception'
         elif cls is type or isinstance(obj, type):
             if sys_name := _cn_get(obj):
                 f_val = f'<class {sys_name}>'
@@ -504,6 +532,8 @@ def f_object_id(obj, str_lim: int = 32, colorize: bool = False) -> str:
                 f_val = "'''\n" + '\n'.join(tb_lines) + "\n'''"
             else:
                 f_val = repr(obj[:str_lim] + '...')
+        elif cls in SENTINEL_TYPES:
+            return cls.caps
         elif issubclass(cls, Path):
             f_val = f'path {obj.as_posix()!r}'
         elif cls in DATUMS:
@@ -532,22 +562,39 @@ def f_object_id(obj, str_lim: int = 32, colorize: bool = False) -> str:
                 f_val = 'virtual ' + f_val
         elif cls is BoundMethodT:
             f_val = f'bound method {obj.__qualname__!r}'
+        elif cls is UnboundMethodC:
+            f_val = f'unbound C method {obj.__qualname__!r}'
+        elif cls is UnboundDunderMethodC:
+            f_val = f'unbound C system method {obj.__qualname__!r}'
+        elif cls is MutablePropertyC:
+            f_val = f'class slot {obj.__qualname__!r}'
+        elif cls is BoundMethodOrFuncC:
+            if isinstance(mod := obj.__self__, ModuleT):
+                if mod is builtins:
+                    f_val = f'builtin function {obj.__name__!r}'
+                else:
+                    f_val = f'C function {mod.__name__}.{obj.__name__}'
+            else:
+                f_val = f'bound C method {obj.__qualname__!r}'
         else:
-            f_val = f'{cls_name(cls)!r} object'
+            cname = cls.__name__
             if is_virt_obj(obj):
-                f_val = 'virtual ' + f_val
+                f_val = f'virtual {cname}'
             elif hasattr(cls, '__debug_info_str__'):
                 try:
                     f_info = obj.__debug_info_str__()
                     assert isinstance(f_info, str)
                 except:
                     f_info = ''
-                if f_info:
-                    f_val = f'{f_val}; {f_info}'
-        res = f'<{f_val} @ 0x{id(obj):x}>'
-        if colorize:
-            return Rgb.id_obj(obj).hi(res)
-        return res
+                if type(d_fmt := getattr(cls, '__debug_fmt_str__', None)) is str:
+                    res = d_fmt.format(cls=cname, info=f_info, ptr=id(obj))
+                    return Rgb.id_obj(obj).hi(res) if colorize else res
+                f_val = f'{cname}; {f_info}' if f_info else cname
+                no_ptr = True
+            else:
+                f_val = cname
+        res = f'<{f_val}>' if no_ptr else f'<{f_val} @ 0x{id(obj):x}>'
+        return Rgb.id_obj(obj).hi(res) if colorize else res
 
 def r_error(exc: BaseException, str_lim: int = 32) -> str:
     cls = type(exc)
@@ -578,16 +625,70 @@ def is_virt_obj(obj: object) -> bool:
 ####################################################################################################
 
 def f_slot_obj(obj: object, colorize: bool = True):
+    """Formats a slotted object recursively, with other slotted objects
+    appearing inline, as well as (limited) entries of dicts and tuples."""
+
     lines = []
-    add = lines.append
+    _add = lines.append
+    i = 0
+    tab = '  '
+    def add(s): _add((tab * i) + s)
+    f = partial(f_object_id, str_lim=128, colorize=colorize)
+
+    def visit(o):
+        nonlocal i
+        i += 1
+        slots = list(type(o).__slots__)
+        annos = list(type(o).__annotations__)
+        slots.sort(key=lambda k: annos.index(k) if k in annos else 100)
+        for slot in slots:
+            val = getattr(o, slot, FIELD_ABSENT)
+            if val is FIELD_ABSENT:
+                continue
+            cls = type(val)
+            if cls is tuple and _is_short(val):
+                f_val = f(val)
+                add(f'{slot} = {f_val},')
+            elif cls is tuple and len(val) == 1:
+                add(f'{slot} = (')
+                add(f'{tab}{f(val[0])},')
+                add('),')
+            elif cls is tuple and 2 <= len(val):
+                add(f'{slot} = (')
+                for k, v in enumerate(val):
+                    add(f'{tab}{f(v)},')
+                    if k >= 31:
+                        add(f'{tab}{len(val)-32}..,')
+                        break
+                add('),')
+            elif cls is dict:
+                n = len(val)
+                if n == 0:
+                    add(f'{slot} = {{}},')
+                elif 1 <= n <= 1024 and all(type(k) is str for k in val):
+                    add(f'{slot} = dict(')
+                    for z, (k, v) in enumerate(val.items()):
+                        add(f'{tab}{k}={f(v)},')
+                        if z >= 32:
+                            add(f'{tab}...{n-z}')
+                            break
+                    add('),')
+                else:
+                    add(f'{slot} = {{ ...{n} }}'),
+            elif hasattr(cls, '__slots__') and len(cls.__slots__) < 8 and \
+                    not hasattr(cls, '__debug_fmt_slots__'):
+                add(f'{slot} = {BOLD(cls.__name__)}(')
+                visit(val)
+                add('),')
+            else:
+                f_val = f(val)
+                add(f'{slot} = {f_val},')
+        i -= 1
+
     add(BOLD(type(obj).__name__) + '(')
-    for slot in obj.__slots__:
-        val = getattr(obj, slot, FIELD_ABSENT)
-        if val is FIELD_ABSENT:
-            continue
-        f_val = f_object_id(val, 128, colorize=colorize)
-        add(f'  {slot} = {f_val},')
+    visit(obj)
     add(')')
+
     return '\n'.join(lines)
 
 SHORT = int, bool, str, type, NoneT
@@ -604,6 +705,82 @@ def f_pathsafe(obj: Any, fn: ToStr = str) -> str:
 
 def f_idsafe(obj: Any, fn: ToStr = str):
     return idsafe_str(fn(obj))
+
+####################################################################################################
+
+def f_argument(k: str, a: Any, d: Any) -> str:
+    no_a = a is NO_VALUE
+    no_d = d is NO_VALUE
+    if no_a and no_d: return k
+
+    if no_a: fa = None
+    else:    fa = f_anno(a) or UNREP
+
+    if no_d:                    fd = None
+    elif type(d) in PRIMITIVES: fd = repr(d)
+    elif type(d) is object:     fd = UNREP
+    else:                       fd = f_atom(d)
+
+    if no_a: return f'{k}={fd}'
+    if no_d: return f'{k}: {fa}'
+    return f'{k}: {fa} = {fd}'
+
+####################################################################################################
+
+def f_argument_fn(
+        annos: dict | None = None,
+        defaults: dict | None = None) -> Callable[[str], str]:
+
+    if not defaults and not annos: return str
+
+    get_def = getter(defaults)
+    get_ann = getter(annos)
+    return lambda k: f_argument(k, get_ann(k), get_def(k))
+
+UNREP = '<unrepresentable>'
+
+################################################################################
+
+def f_signature(func: FunctionT, overloads: bool = True) -> str:
+    if not isinstance(func, FunctionT):
+        return '<!FunctionType>'
+
+    from ..cpython.code import code_arg_info
+    from ..cpython.function import func_get_defaults
+
+    annos = dict(func_annotations(func))
+    defaults = dict(func_get_defaults(func))
+    f = f_argument_fn(annos, defaults)
+
+    pos, key, pos_star, key_star, pos_only = code_arg_info(func.__code__)
+
+    r = []
+    if pos: r.extend(map(f, pos))
+    if pos_only: r.insert(pos_only, '/')
+    if pos_star: r.append(f(pos_star))
+    if key and not pos_star: r.append('*')
+    if key: r.extend(map(f, key))
+    if key_star: r.append(f(key_star))
+    res = f'({commas(r)})'
+
+    if overloads:
+        from typing import get_overloads
+        overs = '\n'.join(f_signature(f, False) for f in get_overloads(func) if isinstance(f, FunctionT))
+        if overs: res = f'{overs}\n{res}'
+
+    if 'return' in annos:
+        ret = f_anno(annos['return'])
+        return f'{res} -> {ret}'
+    else:
+        return res
+
+
+####################################################################################################
+
+def f_nanos_time(nanos: int) -> str:
+    seconds, nanos = divmod(nanos, 1_000_000_000)
+    dt = datetime.datetime.fromtimestamp(seconds)
+    return f"{dt.strftime('%H:%M:%S')}.{nanos:09d}"
 
 ####################################################################################################
 

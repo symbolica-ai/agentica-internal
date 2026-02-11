@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import msgspec
+
 from agentica_internal.core.json import JsonObject
 from agentica_internal.warpc.kinds import (
     AnnotationsT,

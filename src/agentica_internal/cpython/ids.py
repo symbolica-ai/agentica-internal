@@ -44,15 +44,26 @@ class SysModule(enum.StrEnum):
     OS = 'os'
     OP = 'operator'
     DT = 'datetime'
+    DEC = 'decimal'
     RAND = 'random'
-
+    ARR = 'array'
+    CT = 'ctypes'
+    STR = 'struct'
+    SQL = 'sqlite3'
+    IP = 'ipaddress'
+    UPAR = 'urllib.parse'
+    UREQ = 'urllib.request'
+    URES = 'urllib.response'
+    UERR = 'urllib.error'
 
 SYS_MOD_TABLE: list[tuple[int, str, str]]
 SYS_MOD_TABLE = [(i, k, str(v)) for i, (k, v) in enumerate(SysModule.__members__.items())]
 
-
 ###############################################################################
 
+# this needs to be time-stable for backwards compatibility, which means we need
+# to compact things a bit and not skip such large ranges. probably ok to assume
+# each module will grow 10% over the next few years
 
 class SysClassID(enum.IntEnum):
     """
@@ -125,10 +136,13 @@ class SysClassID(enum.IntEnum):
     X_TupleIterType                  = 0x44
     X_SetIterType                    = 0x45
     X_ReversedListIterType           = 0x47
+    X_SeqIterType                    = 0x48
+    X_ReversedSeqIterType            = 0x49
     X_StrIterType                    = 0x4A
     X_BytesIterType                  = 0x4B
     X_ByteArrayIterType              = 0x4C
-    X_CallableIterType               = 0x4D
+    X_CallIterType                   = 0x4D
+    X_RangeIterType                  = 0x4E
     S_FunctionType                   = 0x50   # callable CPython types
     S_BuiltinFunctionType            = 0x51
     S_MethodType                     = 0x52
@@ -157,7 +171,38 @@ class SysClassID(enum.IntEnum):
     B_filter                         = 0x77
     B_map                            = 0x78
     B_zip                            = 0x79
-    B_reversed                       = 0x80
+    AI_Future                        = 0x80  # asyncio
+    AI_Task                          = 0x80
+    AI_Event                         = 0x80
+    AIQ_Queue                        = 0x80
+    AI_AbstractEventLoop             = 0x81
+    CT_CDLL                          = 0xA0   # ctypes, struct, array
+    CT_PyDLL                         = 0xA1
+    CT_Union                         = 0xA2
+    CT_Structure                     = 0xA3
+    CT_Array                         = 0xA4
+    CT__SimpleCData                  = 0xA5
+    CT__Pointer                      = 0xA6
+    CT__CFuncPtr                     = 0xA7
+    STR_Struct                       = 0xAE
+    ARR_array                        = 0xAF
+    CT_c_uint8                       = 0xB0   # ctypes atomic types
+    CT_c_uint16                      = 0xB1
+    CT_c_uint32                      = 0xB2
+    CT_c_uint64                      = 0xB3
+    CT_c_int8                        = 0xB4
+    CT_c_int16                       = 0xB5
+    CT_c_int32                       = 0xB6
+    CT_c_int64                       = 0xB7
+    CT_c_float                       = 0xBA
+    CT_c_double                      = 0xBB
+    CT_c_bool                        = 0xC0
+    CT_c_char                        = 0xC1
+    CT_c_wchar                       = 0xC2
+    CT_c_char_p                      = 0xC3
+    CT_c_wchar_p                     = 0xC4
+    CT_c_void_p                      = 0xC5
+    CT_py_object                     = 0xC7
     T_Any                            = 0xE0   # public typing.* types
     T_Generic                        = 0xE1
     # S_UnionType                    = 0xE2
@@ -227,6 +272,18 @@ class SysClassID(enum.IntEnum):
     DT_timedelta                     = 0x333
     DT_tzinfo                        = 0x334
     DT_timezone                      = 0x335
+    DEC_Clamped                      = 0x340
+    DEC_Context                      = 0x341
+    DEC_Decimal                      = 0x342
+    DEC_DecimalException             = 0x343
+    DEC_DivisionByZero               = 0x344
+    DEC_FloatOperation               = 0x345
+    DEC_Inexact                      = 0x346
+    DEC_InvalidOperation             = 0x347
+    DEC_Overflow                     = 0x348
+    DEC_Rounded                      = 0x349
+    DEC_Subnormal                    = 0x34A
+    DEC_Underflow                    = 0x34B
     IT_accumulate                    = 0x400  # itertools
     IT_batched                       = 0x401
     IT_chain                         = 0x402
@@ -272,14 +329,51 @@ class SysClassID(enum.IntEnum):
     IN__void                         = 0x7F0
     IN__empty                        = 0x7F1
     IN__ParameterKind                = 0x7F2
-    AI_Future                        = 0x800  # asyncio
-    AI_Task                          = 0x801
-    AI_Event                         = 0x802
-    AIQ_Queue                        = 0x803
-    AI_AbstractEventLoop             = 0x810
-    OS_stat_result                   = 0x900  # os
-    RAND_Random                      = 0xA00  # random
-    RAND_SystemRandom                = 0xA01
+    OS_stat_result                   = 0x800  # os
+    RAND_Random                      = 0x810  # random
+    RAND_SystemRandom                = 0x811
+    SQL_Blob                         = 0x820  # sqlite3
+    SQL_Connection                   = 0x821
+    SQL_Cursor                       = 0x822
+    SQL_PrepareProtocol              = 0x823
+    SQL_Row                          = 0x824
+    IP_IPv4Address                   = 0x830  # ipaddress
+    IP_IPv4Interface                 = 0x831
+    IP_IPv4Network                   = 0x832
+    IP_IPv6Address                   = 0x833
+    IP_IPv6Interface                 = 0x834
+    IP_IPv6Network                   = 0x835
+    UPAR_DefragResult                = 0x840  # urllib.parse
+    UPAR_DefragResultBytes           = 0x841
+    UPAR_ParseResult                 = 0x842
+    UPAR_ParseResultBytes            = 0x843
+    UPAR_SplitResult                 = 0x844
+    UPAR_SplitResultBytes            = 0x845
+    UREQ_AbstractBasicAuthHandler    = 0x850  # urllib.request
+    UREQ_AbstractDigestAuthHandler   = 0x851
+    UREQ_BaseHandler                 = 0x852
+    UREQ_CacheFTPHandler             = 0x853
+    UREQ_DataHandler                 = 0x854
+    UREQ_FileHandler                 = 0x855
+    UREQ_FTPHandler                  = 0x856
+    UREQ_HTTPBasicAuthHandler        = 0x857
+    UREQ_HTTPCookieProcessor         = 0x859
+    UREQ_HTTPDefaultErrorHandler     = 0x85A
+    UREQ_HTTPDigestAuthHandler       = 0x85B
+    UREQ_HTTPErrorProcessor          = 0x85C
+    UREQ_HTTPHandler                 = 0x85D
+    UREQ_HTTPPasswordMgr             = 0x85E
+    UREQ_HTTPPasswordMgrWithDefaultRealm = 0x85F
+    UREQ_HTTPPasswordMgrWithPriorAuth    = 0x860
+    UREQ_HTTPRedirectHandler         = 0x861
+    UREQ_HTTPSHandler                = 0x862
+    UREQ_OpenerDirector              = 0x863
+    UREQ_ProxyBasicAuthHandler       = 0x864
+    UREQ_ProxyDigestAuthHandler      = 0x865
+    UREQ_ProxyHandler                = 0x866
+    UREQ_Request                     = 0x867
+    UREQ_UnknownHandler              = 0x868
+    URES_addinfourl                  = 0x86F  # urllib.response
     T__SpecialForm                   = 0xE11  # internal typing.* types / metas
     T__BaseGenericAlias              = 0xE12
     T__GenericAlias                  = 0xE13
@@ -364,16 +458,30 @@ class SysClassID(enum.IntEnum):
     B_ImportWarning                  = 0xF3C
     B_UnicodeWarning                 = 0xF3D
     B_BytesWarning                   = 0xF3E
-    B_ResourceWarning                = 0xF3F
-    AI_CancelledError                = 0xFA1
-    AI_InvalidStateError             = 0xFA2
-    CF_CancelledError                = 0xFA4
-    CF_BrokenExecutor                = 0xFA5  # wrong module?
-    JS_JSONDecodeError               = 0xFA6
-    IO_UnsupportedOperation          = 0xFA0
-    DC_FrozenInstanceError           = 0xFA1
-    IN_ClassFoundException           = 0xFA2
-    IN_EndOfBlock                    = 0xFA3
+    B_ResourceWarning                = 0xF3F  # 0xF3F - 0xF4F for future builtins
+    AI_CancelledError                = 0xF50  # stable modules with few excs
+    AI_InvalidStateError             = 0xF51
+    CF_CancelledError                = 0xF52
+    CF_BrokenExecutor                = 0xF53
+    IO_UnsupportedOperation          = 0xF54
+    DC_FrozenInstanceError           = 0xF55
+    JS_JSONDecodeError               = 0xF56
+    CT_ArgumentError                 = 0xF57
+    STR_error                        = 0xF58
+    SQL_Warning                      = 0xF60  # sqlite3
+    SQL_Error                        = 0xF61
+    SQL_InterfaceError               = 0xF62
+    SQL_DatabaseError                = 0xF63
+    SQL_DataError                    = 0xF64
+    SQL_OperationalError             = 0xF65
+    SQL_IntegrityError               = 0xF66
+    SQL_InternalError                = 0xF67
+    SQL_ProgrammingError             = 0xF68
+    SQL_NotSupportedError            = 0xF69
+    UERR_ContentTooShortError        = 0xF70  # urllib.error
+    UERR_HTTPError                   = 0xF71
+    UERR_URLError                    = 0xF72
+
 
 
 SYS_CLASS_ID_DICT: dict[str, int] = {v._name_: v._value_ for v in SysClassID}
@@ -420,9 +528,7 @@ class SysObjectID(enum.IntEnum):
     T_Sequence                       = 0x11A
     T_ByteString                     = 0x11B
     T_MutableSequence                = 0x11C
-
     RAND__inst                       = 0x200  # random default state
-
     DC__HAS_DEFAULT_FACTORY          = 0xE00  # dataclass sentinels
     DC_MISSING                       = 0xE01
     DC_KW_ONLY                       = 0xE02
@@ -440,6 +546,8 @@ class SysObjectID(enum.IntEnum):
     Z_CANCELED                       = 0xEE2
     Z_ERRORED                        = 0xEE3
     Z_ARG_DEFAULT                    = 0xEE4
+    Z_ON_DEMAND                      = 0xEE5
+    Z_FIELD_ABSENT                   = 0xEE6
     IN__is_coroutine_mark            = 0xC00
     IN__is_coroutine_marker          = 0xC00  # I'm SURE this existed in 3.12.0
     T_NoReturn                       = 0xF00  # special forms
@@ -468,9 +576,8 @@ SYS_OBJECT_ID_DICT: dict[str, int] = {v._name_: v._value_ for v in SysObjectID}
 
 ###############################################################################
 
-
 class SysFunctionID(enum.IntEnum):
-    B_abs                            = 0x0000
+    B_abs                            = 0x0000  # builtins
     B_aiter                          = 0x0001
     B_all                            = 0x0002
     B_anext                          = 0x0003
@@ -513,15 +620,15 @@ class SysFunctionID(enum.IntEnum):
     B_sorted                         = 0x0028
     B_sum                            = 0x0029
     B_vars                           = 0x002A
-    S_coroutine                      = 0x0100
+    S_coroutine                      = 0x0100  # types
     S_get_original_bases             = 0x0101
     S_new_class                      = 0x0102
     S_prepare_class                  = 0x0103
     S_resolve_bases                  = 0x0104
-    A_abstractmethod                 = 0x0300
+    A_abstractmethod                 = 0x0300  # abc
     A_get_cache_token                = 0x0301
     A_update_abstractmethods         = 0x0302
-    T_NamedTuple                     = 0x0400
+    T_NamedTuple                     = 0x0400  # typing
     T_TypedDict                      = 0x0401
     T_assert_never                   = 0x0402
     T_assert_type                    = 0x0403
@@ -540,8 +647,33 @@ class SysFunctionID(enum.IntEnum):
     T_override                       = 0x0410
     T_reveal_type                    = 0x0411
     T_runtime_checkable              = 0x0412
-    C_namedtuple                     = 0x0500
-    AI_all_tasks                     = 0x0700
+    C_namedtuple                     = 0x04FF  # collections
+    CT_CFUNCTYPE                     = 0x0500  # ctypes + struct
+    CT_PYFUNCTYPE                    = 0x0501
+    CT_POINTER                       = 0x0502
+    CT_ARRAY                         = 0x0503
+    CT_alignment                     = 0x0510
+    CT_sizeof                        = 0x0511
+    CT_addressof                     = 0x0512
+    CT_pointer                       = 0x0513
+    CT_byref                         = 0x0514
+    CT_cast                          = 0x0515
+    # CT_memmove                     = 0x0516  # easy to crash remote, plus
+    # CT_memset                      = 0x0517  # they aren't in FUNC_TYPES
+    CT_resize                        = 0x0518
+    CT_create_string_buffer          = 0x0520
+    CT_create_unicode_buffer         = 0x0521
+    CT_string_at                     = 0x0522
+    CT_wstring_at                    = 0x0523
+    CT_set_errno                     = 0x0530
+    CT_get_errno                     = 0x0532
+    STR_calcsize                     = 0x0540
+    STR_iter_unpack                  = 0x0541
+    STR_pack                         = 0x0542
+    STR_pack_into                    = 0x0543
+    STR_unpack                       = 0x0544
+    STR_unpack_from                  = 0x0545
+    AI_all_tasks                     = 0x0700  # asyncio
     AI_as_completed                  = 0x0701
     AI_create_eager_task_factory     = 0x0702
     AI_create_subprocess_exec        = 0x0703
@@ -576,14 +708,14 @@ class SysFunctionID(enum.IntEnum):
     AI_wait                          = 0x0720
     AI_wait_for                      = 0x0721
     AI_wrap_future                   = 0x0722
-    EN_global_enum                   = 0x0800
+    EN_global_enum                   = 0x0800  # enum
     EN_global_enum_repr              = 0x0801
     EN_global_flag_repr              = 0x0802
     EN_global_str                    = 0x0803
     EN_pickle_by_enum_name           = 0x0804
     EN_pickle_by_global_name         = 0x0805
     EN_unique                        = 0x0806
-    DC_asdict                        = 0x0900
+    DC_asdict                        = 0x0900  # dataclasses
     DC_astuple                       = 0x0901
     DC_dataclass                     = 0x0902
     DC_field                         = 0x0903
@@ -591,8 +723,8 @@ class SysFunctionID(enum.IntEnum):
     DC_is_dataclass                  = 0x0905
     DC_make_dataclass                = 0x0906
     DC_replace                       = 0x0907
-    IT_tee                           = 0x0A00
-    FT_cache                         = 0x0B00
+    IT_tee                           = 0x0A00  # itertools
+    FT_cache                         = 0x0B00  # functools
     FT_cmp_to_key                    = 0x0B01
     FT_lru_cache                     = 0x0B02
     FT_reduce                        = 0x0B03
@@ -600,7 +732,7 @@ class SysFunctionID(enum.IntEnum):
     FT_total_ordering                = 0x0B05
     FT_update_wrapper                = 0x0B06
     FT_wraps                         = 0x0B07
-    IN_classify_class_attrs          = 0x0C00
+    IN_classify_class_attrs          = 0x0C00  # inspect
     IN_cleandoc                      = 0x0C01
     IN_currentframe                  = 0x0C02
     IN_findsource                    = 0x0C03
@@ -668,7 +800,7 @@ class SysFunctionID(enum.IntEnum):
     IN_unwrap                        = 0x0C41
     IN_walktree                      = 0x0C42
     IO_open_code                     = 0x0D00
-    RE_compile                       = 0x0E00
+    RE_compile                       = 0x0E00  # re
     RE_escape                        = 0x0E01
     RE_findall                       = 0x0E02
     RE_finditer                      = 0x0E03
@@ -681,7 +813,7 @@ class SysFunctionID(enum.IntEnum):
     RE_subn                          = 0x0E0A
     if not PY13: # RE_template was removed in Python 3.13
         RE_template                  = 0x0E0B
-    OP_abs                           = 0x0F00
+    OP_abs                           = 0x0F00  # operator
     OP_add                           = 0x0F01
     OP_and_                          = 0x0F02
     OP_call                          = 0x0F03
@@ -733,7 +865,7 @@ class SysFunctionID(enum.IntEnum):
     OP_truediv                       = 0x0F31
     OP_truth                         = 0x0F32
     OP_xor                           = 0x0F33
-    RAND_seed                        = 0x1000  # random bound methods
+    RAND_seed                        = 0x1000  # random (bound methods of global RNG state)
     RAND_random                      = 0x1001
     RAND_uniform                     = 0x1002
     RAND_triangular                  = 0x1003
@@ -757,34 +889,41 @@ class SysFunctionID(enum.IntEnum):
     RAND_setstate                    = 0x1015
     RAND_getrandbits                 = 0x1016
     RAND_randbytes                   = 0x1017
+    SQL_complete_statement           = 0x1100  # sqlite3
+    SQL_connect                      = 0x1101
+    SQL_enable_callback_tracebacks   = 0x1101
+    SQL_register_adapter             = 0x1102
+    SQL_register_converter           = 0x1103
+    IP_collapse_addresses            = 0x1200
+    IP_get_mixed_type_key            = 0x1201
+    IP_ip_address                    = 0x1202
+    IP_ip_interface                  = 0x1203
+    IP_ip_network                    = 0x1204
+    IP_summarize_address_range       = 0x1205
+    IP_v4_int_to_packed              = 0x1206
+    IP_v6_int_to_packed              = 0x1207
+    UPAR_parse_qs                    = 0x1210
+    UPAR_parse_qsl                   = 0x1211
+    UPAR_quote                       = 0x1212
+    UPAR_quote_from_bytes            = 0x1213
+    UPAR_quote_plus                  = 0x1214
+    UPAR_unquote                     = 0x1215
+    UPAR_unquote_to_bytes            = 0x1216
+    UPAR_unwrap                      = 0x1217
+    UPAR_urldefrag                   = 0x1218
+    UPAR_urlencode                   = 0x1219
+    UPAR_urljoin                     = 0x121A
+    UPAR_urlparse                    = 0x121B
+    UPAR_urlsplit                    = 0x121C
+    UPAR_urlunparse                  = 0x121D
+    UPAR_urlunsplit                  = 0x121E
+    UREQ_build_opener                = 0x1220
+    UREQ_getproxies                  = 0x1221
+    UREQ_install_opener              = 0x1222
+    UREQ_pathname2url                = 0x1223
+    UREQ_url2pathname                = 0x1224
+    UREQ_urlcleanup                  = 0x1225
+    UREQ_urlopen                     = 0x1226
+    UREQ_urlretrieve                 = 0x1227
 
 SYS_FUNCTION_ID_DICT: dict[str, int] = {v._name_: v._value_ for v in SysFunctionID}
-
-
-# the above is generated by:
-def _generate_function_ids():
-    from importlib import import_module
-
-    from agentica_internal.cpython.alias import CALLABLES as FUNC_TYPES
-
-    seen = set()
-    see = seen.add
-    for i, prefix, name in SYS_MOD_TABLE:
-        mod = import_module(name)
-        j = i << 8
-        items = list(vars(mod).items())
-        exports = getattr(mod, '__all__', None)
-        items.sort()
-        for k, v in items:
-            if k.startswith('_'):
-                continue
-            if exports and k not in exports:
-                continue
-            if isinstance(v, FUNC_TYPES):
-                i = id(v)
-                if i in seen:
-                    continue
-                see(i)
-                name = f'{prefix}_{k}'
-                print('    ', name.ljust(33), '= ', f'0x{j:04X}', sep='')
-                j += 1

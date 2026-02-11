@@ -17,7 +17,7 @@ __all__ = [
 
 ################################################################################
 
-BLACKLIST_MODULES = 'agentica_internal.warpc.', 'virtual.', 'agentica'
+BLACKLIST_MODULES = 'agentica_internal.warpc.', 'virtual.', 'agentica.', 'ctypes.', '_ctypes.'
 WHITELIST_MODULES = 'agentica_internal.testing.',
 WHITELIST_OBJECTS: set[int] = set()
 

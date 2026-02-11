@@ -28,6 +28,7 @@ __all__ = [
     'ex_union',
     'ex_generic_alias',
     'ex_builtin_function',
+    'ex_builtin_method',
     'ex_class_method_descriptor',
     'ex_get_set_descriptor',
     'ex_method_descriptor',
@@ -186,6 +187,6 @@ ex_method_wrapper = bytes().__buffer__
 
 ex_member_descriptor = range.start
 
-#######################################################ex#########################
+################################################################################
 
 ex_singleton = NotImplemented

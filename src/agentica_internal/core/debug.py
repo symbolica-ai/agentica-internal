@@ -43,6 +43,7 @@ __all__ = [
     'exception_frame',
     'exception_location',
     'enable_rich_tracebacks',
+    'echoing',
     'avoid_file',
     'avoid_function',
     'avoid_module',
@@ -758,14 +759,14 @@ class DebugFormatter:
         if message:
             yield from str_prop('message', message, _MSG, w)
 
-        if traceback:
-            tb_frames = self._tb_frames(traceback)
-            yield from strs_prop('traceback', self._tb_lines(tb_frames, w), w)
-
         if notes:
             for i, note in enumerate(notes):
                 if isinstance(note, str):
                     yield from str_prop(f'note #{i}', note, _MSG, w)
+
+        if traceback:
+            tb_frames = self._tb_frames(traceback)
+            yield from strs_prop('traceback', self._tb_lines(tb_frames, w), w)
 
         w -= 3
         if cause:
@@ -889,7 +890,7 @@ class DebugFormatter:
         avoid_frame = self._avoid_frame
 
         see = self.see
-        while tb:
+        while type(tb) is TracebackType:
             frame = tb.tb_frame
             if see(tb) or avoid_frame(frame):
                 pass
@@ -1300,6 +1301,21 @@ def package_relative_path(filename: str) -> str:
                 return rel.replace('/', '.').removesuffix('.py')
     return ''
 
+
+####################################################################################################
+
+def echoing[C: Callable](fn: C) -> C:
+    from .print import nprint
+    name = colorize(fn.__name__, 30)
+    def wrapped(*args, **kwargs):
+        nprint(name, '(', args, kwargs, ')')
+        res = fn(*args, **kwargs)
+        nprint(name, '->', res)
+        return res
+    wrapped.__wrapped__ = fn
+    wrapped.__name__ = fn.__name__ + '&'
+    wrapped.__module__ = getattr(fn, '__module__', 'echoing')
+    return wrapped
 
 ####################################################################################################
 

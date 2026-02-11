@@ -15,8 +15,8 @@ __all__ = [
 
 if TYPE_CHECKING:
     from ..request.request_future import *
-    from .term_resource import ResourceMsg
-    from .rpc_result import ResultMsg
+    from .msg_aliases import FutureMsg
+    from .term_result import ResultMsg
 
 ################################################################################
 
@@ -28,7 +28,7 @@ class FutureRequestMsg(ResourceRequestMsg):
 
 class CancelFutureMsg(FutureRequestMsg, tag='cancel_future'):
 
-    future: 'ResourceMsg'
+    future: 'FutureMsg'
 
     def decode(self, dec) -> 'CancelFuture':
         from ..request.request_future import CancelFuture
@@ -40,7 +40,7 @@ class CancelFutureMsg(FutureRequestMsg, tag='cancel_future'):
 
 class CompleteFutureMsg(FutureRequestMsg, tag='complete_future'):
 
-    future: 'ResourceMsg'
+    future: 'FutureMsg'
     result: 'ResultMsg'
 
     def decode(self, dec) -> 'CompleteFuture':
@@ -49,3 +49,8 @@ class CompleteFutureMsg(FutureRequestMsg, tag='complete_future'):
             dec.dec_future(self.future),
             self.result.decode(dec),
         )
+
+    ############################################################################
+
+    def get_result_msg(self) -> 'ResultMsg | None':
+        return self.result

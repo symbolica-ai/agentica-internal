@@ -28,11 +28,20 @@ from .term import (
     TermPassByValMsg,
 )
 
-from .term_exception import ExceptionMsg
+from .term_exception import (
+    ExceptionMsg,
+    SystemExceptionMsg,
+    StopIterationMsg,
+    UserExceptionMsg,
+    ShallowUserExceptionMsg,
+    DeepUserExceptionMsg,
+    InternalExceptionMsg
+)
 
 from .term_atom import (
     AtomMsg,
-    NumberMsg, SingletonMsg, NoneMsg,
+    NumberMsg, ComplexMsg, DecimalMsg,
+    SingletonMsg, NoneMsg,
     StrLikeMsg, StrMsg, BytesMsg,
     NotImplMsg, EllipsisMsg, ClosedMsg
 )
@@ -43,15 +52,39 @@ from .term_container import (
     SequenceMsg, ListMsg, TupleMsg, SetMsg, FrozenSetMsg,
 )
 
+from .term_core import (
+    RangeMsg,
+    SliceMsg,
+    ZipMsg,
+    MapMsg,
+    FilterMsg,
+    EnumerateMsg
+)
+
+from .term_iter import (
+    ByValueIterMsg,
+    DataIterMsg,
+    CallIterMsg,
+    RangeIterMsg,
+)
+
 from .term_special import (
     SlotObjMsg,
     ReduceObjMsg,
+    ConstructObjMsg,
     RegexPatternMsg,
     RegexMatchMsg,
     ClassUnionMsg,
     EnumMemberMsg,
     EnumKeyMsg,
     EnumValMsg
+)
+
+from .term_wrapper import (
+    JsonMsg,
+    RawMsg,
+    MsgMsg,
+    FileMsg,
 )
 
 from .term_resource import (
@@ -69,6 +102,8 @@ from .term_resource import (
 
 from .term_lambda import LambdaMsg, SyntaxMsg
 
+from .signature_msg import SignatureMsg
+
 ################################################################################
 
 from .resource_def import DefinitionMsg
@@ -77,20 +112,23 @@ from .resource_data import (
     ResourceDataMsg,
     ObjectDataMsg, ClassDataMsg, FunctionDataMsg, ModuleDataMsg, CoroutineDataMsg,
     TypeDataMsg, TypeAliasDataMsg, TypeVarDataMsg, GenericAliasDataMsg,
-    CallableTypeDataMsg, TypeUnionDataMsg, IteratorDataMsg, EnumClassDataMsg
+    CallableTypeDataMsg, TypeUnionDataMsg, IteratorDataMsg, EnumClassDataMsg,
+    PropertyDataMsg, ExceptionDataMsg
 )
 
 ################################################################################
 
 from .rpc import RPCMsg
 
-from .rpc_framed import FramedRequestMsg, FramedResponseMsg
+from .rpc_framed import (
+    FramedMsg,
+    FramedRequestMsg,
+    FramedResponseMsg
+)
 
 ################################################################################
 
 from .rpc_request import RequestMsg
-
-from . import rpc_legacy as legacy
 
 from .rpc_request_repl import (
     ReplRequestMsg,
@@ -136,18 +174,7 @@ from .rpc_sideband import (
 
 ################################################################################
 
-from .rpc_result import (
-    ResultMsg,
-    ResultValueMsg,
-    OkMsg,
-    ValueMsg,
-    JsonValueMsg,
-    ResultErrorMsg,
-    ErrorMsg,
-    InternalErrorMsg,
-    ResultUnavailableMsg,
-    OK_MSG,
-)
+from .term_result import ResultMsg
 
 ################################################################################
 
@@ -162,12 +189,19 @@ from . import system as SYS
 from .msg_aliases import (
     ArgsMsg,
     KwargsMsg,
-    AnnotationsMsg,
-    ResourcesRecordMsg,
     MethodsMsg,
     AttributesMsg,
-    ClassesTupleMsg,
-    OverloadsMsg,
+    TypeMsg,
+    ClassMsg,
+    ObjectMsg,
+    FunctionMsg,
+    ModuleMsg,
+    FutureMsg,
+    PropertyMsg,
+    ExceptionRefMsg,
+    AnnotationsMsg,
+    PropertiesMsg,
+    SrcLocationMsg
 )
 
 ################################################################################
@@ -182,12 +216,19 @@ __all__ = [
 
     'ArgsMsg',
     'KwargsMsg',
-    'AnnotationsMsg',
-    'ResourcesRecordMsg',
     'MethodsMsg',
     'AttributesMsg',
-    'ClassesTupleMsg',
-    'OverloadsMsg',
+    'TypeMsg',
+    'ClassMsg',
+    'ObjectMsg',
+    'FunctionMsg',
+    'ModuleMsg',
+    'FutureMsg',
+    'PropertyMsg',
+    'ExceptionRefMsg',
+    'AnnotationsMsg',
+    'PropertiesMsg',
+    'SrcLocationMsg',
 
     'EncoderP',
     'EncoderContextP',
@@ -208,6 +249,8 @@ __all__ = [
 
     'AtomMsg',
     'NumberMsg',
+    'ComplexMsg',
+    'DecimalMsg',
     'SingletonMsg',
     'NoneMsg',
     'NotImplMsg',
@@ -224,18 +267,39 @@ __all__ = [
     'TupleMsg',
     'SetMsg',
     'FrozenSetMsg',
+    'RangeMsg',
+    'SliceMsg',
+    'ZipMsg',
+    'MapMsg',
+    'FilterMsg',
+    'EnumerateMsg',
+    'ExceptionMsg',
+    'SystemExceptionMsg',
+    'UserExceptionMsg',
+    'StopIterationMsg',
+    'ShallowUserExceptionMsg',
+    'DeepUserExceptionMsg',
+    'InternalExceptionMsg',
+    'ByValueIterMsg',
+    'DataIterMsg',
+    'CallIterMsg',
+    'RangeIterMsg',
     'SlotObjMsg',
     'ReduceObjMsg',
+    'ConstructObjMsg',
     'RegexPatternMsg',
     'RegexMatchMsg',
     'ClassUnionMsg',
     'EnumMemberMsg',
     'EnumKeyMsg',
     'EnumValMsg',
-    'ExceptionMsg',
     'SyntaxMsg',
     'LambdaMsg',
-
+    'SignatureMsg',
+    'JsonMsg',
+    'RawMsg',
+    'MsgMsg',
+    'FileMsg',
     'ResourceMsg',
     'UserResourceMsg',
     'SystemResourceMsg',
@@ -261,8 +325,11 @@ __all__ = [
     'TypeUnionDataMsg',
     'IteratorDataMsg',
     'EnumClassDataMsg',
+    'PropertyDataMsg',
+    'ExceptionDataMsg',
 
     'RPCMsg',
+    'FramedMsg',
     'FramedRequestMsg',
     'FramedResponseMsg',
 
@@ -301,17 +368,8 @@ __all__ = [
     'CHANNEL_CLOSED_MSG',
 
     'ResultMsg',
-    'ResultValueMsg',
-    'OkMsg',
-    'ValueMsg',
-    'JsonValueMsg',
-    'ResultErrorMsg',
-    'ErrorMsg',
-    'InternalErrorMsg',
-    'ResultUnavailableMsg',
 
     'NO_VARS',
-    'OK_MSG',
     'SYS',
 
     'VarsMsg',
@@ -328,8 +386,6 @@ __all__ = [
     'fmt_msgpack',
 
     'bytes_to_repl_init_data',
-
-    'legacy',
 ]
 
 

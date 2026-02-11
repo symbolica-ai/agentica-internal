@@ -1,6 +1,11 @@
+![Header image](assets/Header.png)
+
 # Agentica Internal Libraries
 
 [![PyPI version](https://img.shields.io/pypi/v/agentica-internal.svg)](https://pypi.org/project/agentica-internal/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Discord](https://img.shields.io/discord/1470799122717085941?logo=discord&label=Discord)](https://discord.gg/bddGs8bb)
+[![Twitter](https://img.shields.io/twitter/follow/symbolica?style=flat&logo=x&label=Follow)](https://x.com/symbolica)
 
 [Agentica](https://agentica.symbolica.ai) is a type-safe AI framework that lets LLM agents integrate with your code—functions, classes, live objects, even entire SDKs. Instead of building MCP wrappers or brittle schemas, you pass references directly; the framework enforces your types at runtime, constrains return types, and manages agent lifecycle.
 
@@ -81,7 +86,6 @@ See there for:
 - `inspect.py` - Enhanced inspection utilities
 - `iters.py` - Iterator protocol helpers
 - `classes/` - Class introspection
-- `shed/` - Curated versions of `types`, `typing`, and builtin modules
 
 ### Remote Procedure Calls
 
@@ -185,3 +189,8 @@ This package is intended for **internal use only** within the Agentica framework
 - and it is exercised by [The Agentica TypeScript SDK](https://github.com/symbolica-ai/agentica-typescript-sdk)
 
 External users should use the public SDK packages, not `agentica_internal` directly.
+
+## License
+
+This project is licensed under the [MIT License](./LICENSE).
+

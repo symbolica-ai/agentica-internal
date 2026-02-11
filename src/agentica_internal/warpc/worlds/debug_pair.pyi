@@ -1,37 +1,25 @@
 # fmt: off
 
-from typing import TypeVar, Callable, Coroutine, overload
 from pathlib import Path
 
 from ...core.log import LoggingSpec
 from ..events import Event
 from .debug_world import DebugWorld
-
+from .debug_pipe import Pipe
 
 __all__ = [
-    'ConnectedPair'
+    'Pair',
+    'Pipe'
 ]
 
 ################################################################################
 
-Type = TypeVar('Type', bound='type')
-Return = TypeVar('Return', bound='object')
-Object = TypeVar('Object', bound='object')
-
-
-def foo(i: int, b: bool) -> str: pass
-
-@overload
-def sender(_: Type) -> Coroutine[None, None, Type]: ...
-@overload
-def sender(_: Callable[..., Return]) -> Callable[..., Coroutine[None, None, Return]]: ...
-@overload
-def sender(_: Object) -> Coroutine[None, None, Object]: ...
-
-
-class ConnectedPair:
+class Pair:
     a: DebugWorld
     b: DebugWorld
+
+    A: Pipe
+    B: Pipe
 
     def __init__(self,
                  a_name: str = 'a',
@@ -41,9 +29,6 @@ class ConnectedPair:
                  **kwargs) -> None:
         ...
 
-    A = staticmethod(sender)
-    B = staticmethod(sender)
-
     @property
     def tmp_file(self) -> Path: ...
 
@@ -51,11 +36,9 @@ class ConnectedPair:
     def worlds(self) -> tuple[DebugWorld, DebugWorld]: ...
 
     @property
-    def pipes(self):
-        return sender, sender
+    def pipes(self) -> tuple[Pipe, Pipe]: ...
 
-    async def __aenter__(self):
-        return sender
+    async def __aenter__(self) -> Pipe: ...
 
     async def __aexit__(self, exc_type, exc_val, exc_tb): ...
 
@@ -66,11 +49,7 @@ class ConnectedPair:
     def collect_events(self, events: list[Event]): ...
 
     @property
-    def last_a_event(self) -> Event: ...
+    def a_event(self) -> Event: ...
 
     @property
-    def last_b_event(self) -> Event: ...
-
-
-ConnectedPair.A = staticmethod(sender)
-ConnectedPair.B = staticmethod(sender)
+    def b_event(self) -> Event: ...

@@ -17,7 +17,7 @@ async def test_resource_pre_hooks():
 
     my_obj = MyClass()
 
-    pair = DebugWorld.connected_pair()
+    pair = DebugWorld.connected_pair(logging=False)
     async with pair as B:
         my_obj_b = await B(my_obj)
         assert str(my_obj_b) == 'str'
@@ -36,8 +36,7 @@ async def test_resource_pre_hooks():
             return NotImplemented
 
         pair.b.register_pre_request_hook(str, bad_hook)
-        with pytest.raises(RuntimeError):
-            str(my_obj_b)
+        assert str(my_obj_b) == "<'MyClass' object>"
 
         pair.b.register_pre_request_hook(str, hooked_str_or_repl)
         assert str(my_obj_b) == 'hooked'
@@ -91,8 +90,7 @@ async def test_resource_post_hooks():
             return NotImplemented
 
         pair.b.register_post_request_hook(str, bad_hook)
-        with pytest.raises(RuntimeError):
-            str(my_obj_b)
+        assert str(my_obj_b) == "<'MyClass' object>"
 
         pair.b.register_post_request_hook(str, hooked_str_or_repl)
         assert str(my_obj_b) == '<hooked str>'

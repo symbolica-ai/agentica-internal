@@ -7,7 +7,8 @@ from .sdk_world import *
 
 __all__ = [
     'DebugWorld',
-    'ConnectedPair',
+    'Pair',
+    'Pipe',
     'is_virtual',
     'is_real',
     'load_msg_log',
@@ -76,6 +77,10 @@ class DebugWorld(SDKWorld):
         super().on_event(d, t, msg)
         self.add_event(EventEvent.dir(d)(t, msg))
 
+    def on_channel(self, d: Direction, t: Tick, msg: ChannelMsg) -> None:
+        super().on_channel(d, t, msg)
+        self.add_event(ChannelEvent.dir(d)(t, msg))
+
     def collect_events(self, events: list[Event]):
         events.extend(self.events)
         self.events.clear()
@@ -91,11 +96,9 @@ class DebugWorld(SDKWorld):
         # because both DebugWorlds are in the same process, we can cheat!
         on_exit = self.on_frame(Outgoing, msg)
         log = bool(LOG_SEND) | bool(LOG_RECV)
-        if log:
-            P.nprint(ICON_PAIR, msg.msgpack_str(multiline=False))
+        if log: P.nprint(ICON_PAIR, msg.msgpack_str(multiline=False))
         response_msg = self.other.root.exec_incoming_request(msg, None, on_exit)
-        if log:
-            P.nprint(ICON_PAIR, response_msg.msgpack_str(multiline=False))
+        if log: P.nprint(ICON_PAIR, response_msg.msgpack_str(multiline=False))
         return response_msg
 
     def send_event(self, msg: EventMsg) -> None:
@@ -115,7 +118,7 @@ class DebugWorld(SDKWorld):
     async def execute_repl_request(self, msg: ReplRequestMsg, defs=()) -> Result:
         mid = self.repl_next_mid
         self.repl_next_mid -= 1
-        request_msg = FramedRequestMsg(mid=mid, fid=0, data=msg, fmt='json', defs=defs)
+        request_msg = FramedRequestMsg(mid=mid, fid=0, request=msg, fmt='json', defs=defs)
         response_msg = await self.execute_outgoing_request_coro(request_msg)
         return response_msg.decode_response(self.root)
 
@@ -131,9 +134,47 @@ class DebugWorld(SDKWorld):
             b_name: str = 'b',
             logging: LoggingSpec = False,
             dump_msgs: bool = False,
-            **kwargs: Any) -> 'ConnectedPair':
-        from .debug_pair import ConnectedPair
-        return ConnectedPair(a_name, b_name, logging, dump_msgs=dump_msgs, **kwargs)
+            **kwargs: Any) -> 'Pair':
+        from .debug_pair import Pair
+        return Pair(a_name, b_name, logging, dump_msgs=dump_msgs, **kwargs)
+
+    # ==========================================================================
+
+    def last_event[E: Event](self, cls: type[E] = Event) -> E:
+        for ev in reversed(self.events):
+            if isinstance(ev, cls):
+                return ev
+        raise RuntimeError(f"No event matching {cls}")
+
+    def all_events[E: Event](self, cls: type[E] = Event) -> Iter[E]:
+        for ev in self.events:
+            if isinstance(ev, cls):
+                yield ev
+
+    def last_msg[M: RPCMsg](self, cls: type[M] = RPCMsg) -> M:
+        for ev in reversed(self.events):
+            if isinstance(ev, RPCEvent) and isinstance(msg := ev.msg, cls):
+                return msg
+        raise RuntimeError(f"No message matching {cls}")
+
+    def all_msgs[M: RPCMsg](self, cls: type[M] = RPCMsg) -> Iter[M]:
+        for ev in self.all_events(RPCEvent):
+            if isinstance(msg := ev.msg, cls):
+                yield msg
+
+    # ==========================================================================
+
+    def pprint_events(self):
+        for event in self.events:
+            P.hdiv()
+            event.pprint()
+        P.hdiv()
+
+    def print_events(self):
+        P.hdiv()
+        lines = [event.line_str() for event in self.events]
+        print('\n'.join(lines))
+        P.hdiv()
 
 
 def is_virtual(obj: Any) -> bool:

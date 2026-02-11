@@ -1,6 +1,6 @@
 # fmt: off
 
-from agentica_internal.cpython.classes.anno import TForward
+from decimal import Decimal
 
 from .__ import *
 from .term import *
@@ -8,6 +8,8 @@ from .term import *
 __all__ = [
     'AtomMsg',
     'NumberMsg',
+    'ComplexMsg',
+    'DecimalMsg',
     'StrLikeMsg',
     'StrMsg',
     'BytesMsg',
@@ -18,11 +20,15 @@ __all__ = [
     'ClosedMsg',
 ]
 
+
+################################################################################
+
 class ForwardRefTypeMsg(TermPassByValMsg, tag='fwdref'):
     type V = str
     v: str
 
     def decode(self, dec: DecoderP) -> V:
+        from ...cpython.classes.anno import TForward
         return TForward(self.v)
 
     @classmethod
@@ -35,9 +41,12 @@ class ForwardRefTypeMsg(TermPassByValMsg, tag='fwdref'):
 class AtomMsg(TermPassByValMsg):
     """ABC for messages describing immutable, atomic values."""
 
+    __debug_fmt_slots__ = False
+
     type V = AtomT
 
-    def decode(self, fn: DecoderP) -> V: ...
+    def decode(self, fn: DecoderP) -> V:
+        return self.decode_atom()
 
     def decode_atom(self) -> V: ...
 
@@ -57,12 +66,16 @@ class AtomMsg(TermPassByValMsg):
             return NotImplMsg.MSG
         raise E.WarpEncodingError(f"not an atom: {term}")
 
+
 ################################################################################
 
 class NumberMsg(AtomMsg, tag='num'):
 
     type V = NumberT
-    v:       NumberT
+    v:       NumberT | str  # str is for bigints
+
+    def __debug_info_str__(self) -> str:
+        return str(self.v)
 
     @property
     def shape(self) -> str:
@@ -74,15 +87,48 @@ class NumberMsg(AtomMsg, tag='num'):
             return 'true' if val else 'false'
         return 'float'
 
-    def decode(self, fn: DecoderP) -> V:
-        return self.v
-
     def decode_atom(self) -> V:
-        return self.v
+        v = self.v
+        return int(v) if type(v) is str else v
 
     @classmethod
     def encode_atom(cls, term: V) -> 'NumberMsg':
-        return cls(term)
+        if type(term) is int and abs(term) > (2**63):
+            return NumberMsg(str(term))
+        return NumberMsg(term)
+
+
+################################################################################
+
+class ComplexMsg(AtomMsg, tag='complex'):
+
+    type V = complex
+
+    re: float
+    im: float
+
+    def decode_atom(self) -> V:
+        return complex(self.re, self.im)
+
+    @classmethod
+    def encode_atom(cls, term: V) -> 'ComplexMsg':
+        return cls(term.real, term.imag)
+
+
+################################################################################
+
+class DecimalMsg(AtomMsg, tag='decimal'):
+
+    type V = Decimal
+
+    digits: str
+
+    def decode_atom(self) -> V:
+        return Decimal(self.digits)
+
+    @classmethod
+    def encode_atom(cls, term: V) -> 'AtomMsg':
+        return DecimalMsg(str(term))
 
 
 ################################################################################
@@ -94,6 +140,9 @@ class StrLikeMsg(AtomMsg):
 
     v: StrLikeT
 
+    def __debug_info_str__(self) -> str:
+        return self.shape
+
     @property
     def shape(self) -> str:
         s = type(self).TAG
@@ -102,9 +151,6 @@ class StrLikeMsg(AtomMsg):
             return repr(v)
         else:
             return s
-
-    def decode(self, fn: DecoderP) -> V:
-        return self.v
 
     def decode_atom(self) -> V:
         return self.v
@@ -137,9 +183,6 @@ class SingletonMsg(AtomMsg):
 
     VAL: ClassVar[SingletonT]
     MSG: ClassVar['SingletonMsg']
-
-    def decode(self, fn: DecoderP) -> V:
-        return type(self).VAL
 
     def decode_atom(self) -> V:
         return type(self).VAL
@@ -177,7 +220,7 @@ class ClosedMsg(SingletonMsg, tag='closed'):
 
 ################################################################################
 
-NoneMsg.MSG      = NoneMsg()
-NotImplMsg.MSG   = NotImplMsg()
-EllipsisMsg.MSG  = EllipsisMsg()
-ClosedMsg.MSG    = ClosedMsg()
+NoneMsg.MSG       = NoneMsg()
+NotImplMsg.MSG    = NotImplMsg()
+EllipsisMsg.MSG   = EllipsisMsg()
+ClosedMsg.MSG     = ClosedMsg()

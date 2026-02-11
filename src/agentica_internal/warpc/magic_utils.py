@@ -2,7 +2,7 @@
 
 from typing import Callable
 
-from .resource.virtual_function import describe_real_function, create_proxy_function
+from .data.signature_compile import create_proxy_function
 
 __all__ = [
     'create_magic_proxy_function'
@@ -13,6 +13,8 @@ __all__ = [
 
 def create_magic_proxy_function(src: Callable, dst: Callable):
 
-    data = describe_real_function(src, process_defaults=False)
+    proxy_fn = create_proxy_function(src, dst)
+    if isig := getattr(proxy_fn, '__signature__', None):
+        setattr(proxy_fn, '__signature__', isig)
 
-    return create_proxy_function(data, dst)
+    return proxy_fn

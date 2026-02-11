@@ -3,7 +3,7 @@ from collections.abc import Callable
 from types import CellType, FrameType, FunctionType, ModuleType
 from typing import Any, Concatenate
 
-from agentica_internal.core.collections import chaindict
+from agentica_internal.core.data import chaindict
 
 __all__ = [
     'mixin',

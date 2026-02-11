@@ -5,9 +5,11 @@ import uuid
 
 from enum import Enum, EnumMeta, IntEnum, StrEnum
 from types import MethodType
+from .data.identifier import get_stack_identifier
 
 from ..core.log import LogBase
 from ..cpython.iters import *
+
 from .__ import *
 from .hooks import *
 from .attrs import FUTURE_ID, WARP_AS, CLASS_WARP_AS
@@ -26,7 +28,6 @@ __all__ = [
     'ExecRemoteFn',
     'ResponseMsgFn',
 ]
-
 
 ################################################################################
 
@@ -283,6 +284,7 @@ class Frame(LogBase, CodecP):
 
         # bind this remote resource and the message to send it as under its ids
         self.grid_to_rsrc[grid] = remote_resource
+
         if not data.MIGHT_ALIAS:
             lrid = id(remote_resource)
             self.lrid_to_rmsg[lrid] = UserResourceMsg(grid)  # so we can send it back
@@ -290,7 +292,8 @@ class Frame(LogBase, CodecP):
 
         if log:
             P.nprint()
-            P.nprint(ICON_C1, 'created', remote_resource, 'in', self, 'with handle', handle)
+            action = 'made (uncached)' if data.MIGHT_ALIAS else 'made'
+            P.nprint(ICON_C1, action, remote_resource, 'in', self.world, f'VHDL={f_grid(handle.grid)}')
             P.hdiv()
 
         return remote_resource
@@ -313,6 +316,7 @@ class Frame(LogBase, CodecP):
 
     def encode_outgoing_resource(self, lrid: LocalRID, resource: ResourceT) -> ResourceMsg:
 
+        assert lrid not in self.lrid_to_rmsg
         enc_stack = self.__enc_stack
         obj_stack = self.__obj_stack
 
@@ -352,7 +356,7 @@ class Frame(LogBase, CodecP):
         if log:
             data.pprint()
             P.nprint()
-            P.nprint(ICON_C1, 'described resource; grid =', f_grid(grid))
+            P.nprint(ICON_CM, 'described resource; grid =', f_grid(grid))
             P.hdiv()
 
         # encode the ResourceData to a ResourceDataMsg
@@ -365,6 +369,9 @@ class Frame(LogBase, CodecP):
             obj_stack.pop()
             enc_stack.pop()
 
+        if log:
+            P.nprint(ICON_C1, 'encoded to', type(data_msg).__name__)
+
         # wrap the ResourceDataMsg in a DefinitionMsg
         def_msg = DefinitionMsg(grid, data_msg)
 
@@ -372,7 +379,7 @@ class Frame(LogBase, CodecP):
         self.outgoing_defs.append(def_msg)
 
         if log:
-            self.log('encoded', f_grid(grid), 'from', resource)
+            self.log('encoded', f_grid(grid), 'from', f_object_id(resource))
 
         return resource_msg
 
@@ -390,6 +397,12 @@ class Frame(LogBase, CodecP):
 
     def handle_virtual_resource_request(self, origin: ResourceHandle, req: ResourceRequest) -> Any:
 
+        # +1 for the virtual stub function, +1 to get to userland
+        src_loc = get_stack_identifier(2) if flags.SEND_VIRTUAL_REQUEST_ORIGIN else None
+
+        if bool(LOG_VSTACK):
+            P.print_current_stack()
+
         if log := bool(LOG_VIRT):
             P.hdiv()
             P.nprint(ICON_I, 'VRR of', origin, 'in', self, 'of', 'in', self.world)
@@ -400,10 +413,10 @@ class Frame(LogBase, CodecP):
 
         if flags.VIRTUAL_RESOURCE_REQUEST_HOOKS and self.world.will_hook(req):
             P.nprint(ICON_I, 'running hook for', req.hook_key()) if log else None
-            remote_fn = partial(self.remote_resource_request_result, origin, req)
+            remote_fn = partial(self.remote_resource_request_result, origin, req, src_loc)
             result = self.world.get_resource_request_hook_result(remote_fn, origin, req)
         else:
-            result = self.remote_resource_request_result(origin, req)
+            result = self.remote_resource_request_result(origin, req, src_loc)
 
         if log:
             P.nprint(ICON_O, result)
@@ -416,7 +429,9 @@ class Frame(LogBase, CodecP):
     # if this is an .as_future or .as_coro request, we can return immediately,
     # otherwise, we use world.execute_outgoing_request_sync(msg) to block until the
     # eventual FramedResponseMsg is received
-    def remote_resource_request_result(self, origin: ResourceHandle, request: ResourceRequest) -> Result:
+    def remote_resource_request_result(self, origin: ResourceHandle,
+                                       request: ResourceRequest,
+                                       src_loc: SrcLocationMsg) -> Result:
         """
         This executes an outgoing request and returns the result as a `Result`.
 
@@ -433,7 +448,7 @@ class Frame(LogBase, CodecP):
             return GENERIC_RESOURCE_ERROR
 
         mid = self.world.new_message_id()
-        msg = FramedRequestMsg.encode_request(self, mid, self.fid, request)
+        msg = FramedRequestMsg.encode_request(self, mid, self.fid, request, src_loc)
 
         if request.as_future:
             P.nprint(ICON_A, 'sending future-based request') if log else None
@@ -511,10 +526,8 @@ class Frame(LogBase, CodecP):
                 val_cls = object
             return self.enc_class(val_cls)
 
-        if flags.REALIZE_SYSTEM_ITERATORS:
-            if cls.__flags__ & 256 and cls in ITER_TYPES:
-                realized = list(term)
-                return self._enc_val(realized)
+        if cls.__flags__ & 256 and cls in ITER_TYPES:
+            return self._enc_iter(term)
 
         if flags.VIRTUAL_LAMBDAS:
             if cls is FunctionType and term.__name__ == '<lambda>':
@@ -525,12 +538,44 @@ class Frame(LogBase, CodecP):
 
         return self.enc_resource(term)
 
+    def _enc_iter(self, it):
+
+        cls = type(it)
+
+        # for small iterators
+        lim = flags.REALIZE_ITERATOR_LIMIT
+        if lim >= 0:
+
+            if cls in STR_ITER_TYPES:
+                if it.__length_hint__() < 1024:
+                    if bool(LOG_ENCR):
+                        P.nprint(ICON_E, f'sending raw str iterator')
+                    return DataIterMsg.encode_iter(it, self)
+
+            size = iter_len(it)
+            if size <= lim:
+                msg_cls = TupleMsg
+                if cls is ListIterType:
+                    msg_cls = ListMsg  # preserve the type, why not?
+                elif cls is not TupleIterType:
+                    if bool(LOG_ENCR):
+                        P.nprint(ICON_E, f'realizing len {size} iterator of class', cls)
+                seq_msg = msg_cls(self.enc_sequence(it))
+                return DataIterMsg(seq_msg)
+
+        if flags.VIRTUAL_ITERATORS:
+            # becomes an IteratorDataMsg later due to is_iterator_t
+            return self.enc_resource(it)
+
+        else:
+            self.raise_enc_err("builtin iterator objects require `flags.VIRTUAL_ITERATORS = True`")
+
     # --------------------------------------------------------------------------
 
-    def enc_exception(self, exc: BaseException) -> ExceptionMsg:
+    def enc_exception(self, exc: BaseException) -> ExceptionMsg | ExceptionRefMsg:
         if not isinstance(exc, BaseException):
             self.raise_enc_err(f"not an exception: {f_object_id(exc)}")
-        return ExceptionMsg.encode_compound(exc, self)
+        return ExceptionMsg.encode_exception(exc, self)
 
     def enc_value(self, val: ValueT) -> TermPassByValMsg:
         if msg := self._enc_val(val):
@@ -551,7 +596,7 @@ class Frame(LogBase, CodecP):
             return fn(val, self)
 
         if isinstance(val, BaseException):
-            return ExceptionMsg.encode_compound(val, self)
+            return ExceptionMsg.encode_exception(val, self)
 
         if isinstance(val, Enum):
             return EnumMemberMsg.encode_enum(val, self)
@@ -565,28 +610,28 @@ class Frame(LogBase, CodecP):
             raise E.WarpEncodingError(f"not an object: {f_object_id(obj)}")
         return self.enc_resource(obj)
 
-    def enc_class(self, cls: ClassT) -> ResourceMsg:
+    def enc_class(self, cls: ClassT) -> ClassMsg:
         if not is_class_t(cls):
             self.raise_enc_err(f"not a class: {f_object_id(cls)}")
         return self.enc_resource(cls)
 
-    def enc_type(self, cls: TypeT) -> TermMsg:
+    def enc_type(self, cls: TypeT) -> TypeMsg:
         try:
             return self.enc_any(cls)
         except E.WarpEncodingError:
             return self.enc_resource(Any)
 
-    def enc_function(self, fun: FunctionT) -> ResourceMsg:
-        if not is_function_t(fun):
+    def enc_function(self, fun: FunctionT) -> FunctionMsg:
+        if not is_function_t(fun) and not callable(fun):
             self.raise_enc_err(f"not a function: {f_object_id(fun)}")
         return self.enc_resource(fun)
 
-    def enc_module(self, mod: ModuleT) -> ResourceMsg:
+    def enc_module(self, mod: ModuleT) -> ModuleMsg:
         if not is_module_t(mod):
             self.raise_enc_err(f"not a module: {f_object_id(mod)}")
         return self.enc_resource(mod)
 
-    def enc_future(self, fut: FutureT) -> ResourceMsg:
+    def enc_future(self, fut: FutureT) -> FutureMsg:
         if not is_future_t(fut):
             self.raise_enc_err(f"not a future: {f_object_id(fut)}")
         return self.enc_resource(fut)
@@ -622,7 +667,7 @@ class Frame(LogBase, CodecP):
         handle = get_handle(resource)
         if handle is not None:
             f_resource = f_object_id(resource)
-            self.log("existing", resource, "with handle", handle, "not in cache")
+            self.log("ERROR: existing", resource, "with handle", handle, "not in cache")
             msg = f"existing {f_resource} with handle {handle} not in cache"
             self.raise_enc_err(msg)
 
@@ -651,11 +696,25 @@ class Frame(LogBase, CodecP):
         return tuple(map(self.enc_any, seq))
 
     def enc_record(self, dct: dict) -> Rec[TermMsg]:
-        return dict(zip(dct.keys(), map(self.enc_any, dct.values())))
+        if type(dct) is not dict:
+            self.raise_enc_err(f'record expected, got {f_object_id(dct)}')
+        if not dct: return {}
+        msg = dict(zip(dct.keys(), map(self.enc_any, dct.values())))
+        return msg
 
     def enc_args(self, tup: ArgsT) -> ArgsMsg:
+        if not tup: return ()
         enc_any = self.enc_any
-        return tuple(enc_any(v) for v in tup if v is not ARG_DEFAULT)
+        if not any(a is ARG_DEFAULT for a in tup):
+            return tuple(map(enc_any, tup))
+        res = []
+        for i, arg in enumerate(tup):
+            if arg is ARG_DEFAULT:
+                if not all(a is ARG_DEFAULT for a in tup[i:]):
+                    self.log(f"malformed args: {tup}")
+                break
+            res.append(enc_any(arg))
+        return tuple(res)
 
     def enc_kwargs(self, rec: KwargsT) -> KwargsMsg:
         enc_any = self.enc_any
@@ -666,6 +725,22 @@ class Frame(LogBase, CodecP):
             return {}
         res = {}
         for k, v in rec.items():
+            try:
+                v_msg = self.enc_any(v)
+                if isinstance(v_msg, SystemResourceMsg) and v_msg.sid in FORBIDDEN_IDS:
+                    continue
+                res[k] = v_msg
+            except E.WarpEncodingError:
+                pass
+        return res
+
+    def enc_properties(self, rec: PropertiesT) -> PropertiesMsg:
+        if not rec:
+            return {}
+        res = {}
+        for k, v in rec.items():
+            if not is_property_t(v):
+                continue
             try:
                 v_msg = self.enc_any(v)
                 if isinstance(v_msg, SystemResourceMsg) and v_msg.sid in FORBIDDEN_IDS:
@@ -696,10 +771,14 @@ class Frame(LogBase, CodecP):
 
     # --------------------------------------------------------------------------
 
-    def dec_exception(self, msg: ExceptionMsg) -> BaseException:
-        if not isinstance(msg, ExceptionMsg):
-            self.raise_dec_err(f"{f_object_id(msg)} is not an ExceptionMsg")
-        return msg.decode(self)
+    def dec_exception(self, msg: ExceptionMsg | ExceptionRefMsg) -> BaseException:
+        if isinstance(msg, ExceptionMsg):
+            return msg.decode(self)
+        elif isinstance(msg, ResourceMsg):
+            exc = self.dec_resource(msg)
+            if isinstance(exc, BaseException):
+                return exc
+        self.raise_dec_err(f"{f_object_id(msg)} is not an ExceptionMsg")
 
     def dec_value(self, msg: TermMsg) -> ValueT:
         if not isinstance(msg, TermPassByValMsg):
@@ -708,32 +787,32 @@ class Frame(LogBase, CodecP):
 
     # --------------------------------------------------------------------------
 
-    def dec_object(self, msg: ResourceMsg) -> ObjectT:
+    def dec_object(self, msg: ObjectMsg) -> ObjectT:
         obj = self.dec_resource(msg)
         is_object_t(obj) or self.raise_wrong_type(msg, obj, Kind.Object)
         return obj
 
-    def dec_class(self, msg: ResourceMsg) -> ClassT:
+    def dec_class(self, msg: ClassMsg) -> ClassT:
         cls = self.dec_resource(msg)
         is_class_t(cls) or self.raise_wrong_type(msg, cls, Kind.Class)
         return cls
 
-    def dec_function(self, msg: ResourceMsg) -> FunctionT:
+    def dec_function(self, msg: FunctionMsg) -> FunctionT:
         fun = self.dec_resource(msg)
-        is_function_t(fun) or self.raise_wrong_type(msg, fun, Kind.Function)
+        is_function_t(fun) or callable(fun) or self.raise_wrong_type(msg, fun, Kind.Function)
         return fun
 
-    def dec_module(self, msg: ResourceMsg) -> ModuleT:
+    def dec_module(self, msg: ModuleMsg) -> ModuleT:
         mod = self.dec_resource(msg)
         is_module_t(mod) or self.raise_wrong_type(msg, mod, Kind.Module)
         return mod
 
-    def dec_future(self, msg: ResourceMsg) -> FutureT:
+    def dec_future(self, msg: FutureMsg) -> FutureT:
         mod = self.dec_resource(msg)
         is_future_t(mod) or self.raise_wrong_type(msg, mod, Kind.Future)
         return mod
 
-    def dec_type(self, msg: TermMsg) -> TypeT:
+    def dec_type(self, msg: TypeMsg) -> TypeT:
         try:
             return self.dec_any(msg)
         except E.WarpDecodingError as err:
@@ -779,6 +858,8 @@ class Frame(LogBase, CodecP):
     def dec_record(self, rec: Rec[TermMsg]) -> Rec[TermT]:
         if type(rec) is not dict:
             self.raise_dec_err(f"{f_object_id(rec)} is not dict (of TermMsgs)")
+        if not rec:
+            return {}
         return dict(zip(rec.keys(), map(self.dec_any, rec.values())))
 
     def dec_args(self, tup: ArgsMsg) -> ArgsT:
@@ -792,7 +873,26 @@ class Frame(LogBase, CodecP):
     def dec_annotations(self, rec: AnnotationsMsg) -> AnnotationsT:
         if type(rec) is not dict:
             self.raise_dec_err(f"{f_object_id(rec)} is not dict (of TermMsgs)")
+        if not rec: return {}
         return dict(zip(rec.keys(), map(self.dec_type, rec.values())))
+
+    def dec_property(self, msg: PropertyMsg) -> PropertyT:
+        prop = self.dec_resource(msg)
+        if not isinstance(prop, property):
+            self.raise_dec_err(f"{f_object_id(msg)} is not a property msg")
+        return prop
+
+    def dec_properties(self, rec: PropertiesMsg) -> PropertiesT:
+        if type(rec) is not dict:
+            self.raise_dec_err(f"{f_object_id(rec)} is not dict (of property msgs)")
+        dec_prop = self.dec_property
+        props = {}
+        for k, m in rec.items():
+            try:
+                props[k] = dec_prop(m)
+            except E.WarpDecodingError:
+                continue
+        return props
 
     def dec_methods(self, rec: MethodsMsg) -> MethodsT:
         if type(rec) is not dict:
@@ -824,6 +924,14 @@ class Frame(LogBase, CodecP):
 
     def future_from_id(self, future_id: FutureID) -> FutureT:
         return self.world.future_from_id(future_id)
+
+    ############################################################################
+
+    def enc_before(self, lrid: LocalRID, /) -> bool:
+        return lrid in self.lrid_to_rmsg
+
+    def dec_before(self, grid: GlobalRID, /) -> bool:
+        return grid in self.grid_to_rsrc
 
     ############################################################################
 
@@ -889,6 +997,10 @@ def choose_resource_class(resource: ResourceT) -> type[ResourceData]:
         return IteratorData
     elif flags.VIRTUAL_FUTURES and is_future_t(resource):
         return FutureData
+    elif flags.CLASS_PROPERTIES and is_property_t(resource):
+        return PropertyData
+    elif flags.VIRTUAL_EXCEPTIONS and isinstance(resource, BaseException):
+        return ExceptionData
     else:
         return ObjectData
 
@@ -937,26 +1049,17 @@ class FrameDecoderContext:
                 added.add(grid)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_tb:
+            P.print_traceback(exc_tb)
         incoming = self.incoming
         for grid in self.added:
             incoming.pop(grid)
 
 ################################################################################
 
-const_fn = CONSTANT_ENCODERS.get
-atom_fn = SIMPLE_ENCODERS.get
+const_fn    = CONSTANT_ENCODERS.get
+atom_fn     = SIMPLE_ENCODERS.get
 compound_fn = COMPLEX_ENCODERS.get
-
-################################################################################
-
-def enc_list_iter(obj, enc):
-    return enc.enc_any(list(obj))
-
-def enc_tuple_iter(obj, enc):
-    return enc.enc_any(tuple(obj))
-
-def enc_set_iter(obj, enc):
-    return enc.enc_any(set(obj))
 
 ################################################################################
 
@@ -977,13 +1080,6 @@ def fmt_id_set(ids: set[int]) -> str:
     return text if len(ids) < 16 else text + ' ...'
 
 ################################################################################
-
-COMPLEX_ENCODERS[ListIterType] = enc_list_iter
-COMPLEX_ENCODERS[TupleIterType] = enc_tuple_iter
-COMPLEX_ENCODERS[SetIterType] = enc_set_iter
-COMPLEX_ENCODERS[DictKeysType] = enc_list_iter
-COMPLEX_ENCODERS[DictValuesType] = enc_list_iter
-COMPLEX_ENCODERS[DictItemsType] = enc_list_iter
 
 # uncomment to see mappings from literal classes to their compound encounders
 # for k, v in COMPLEX_ENCODERS.items():

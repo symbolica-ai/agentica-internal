@@ -1,7 +1,10 @@
 # fmt: off
 
 from contextlib import contextmanager
-from typing import Literal
+from typing import Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 __all__ = ['with_flags']
@@ -15,6 +18,10 @@ INLINE_DEFINITIONS: bool = True
 # do we virtualize v_cls.xxx when xxx is not a known key?
 CLASS_OPEN_KEYS: bool = False
 
+# do we serialize information about properties/descriptors or rely on
+# open keys instead?
+CLASS_PROPERTIES: bool = True
+
 # when an async mode is not specified for a function, what mode should be used?
 DEFAULT_ASYNC_MODE: Literal['coro', 'future', 'sync'] = 'future'
 
@@ -22,22 +29,25 @@ DEFAULT_ASYNC_MODE: Literal['coro', 'future', 'sync'] = 'future'
 OBJECT_OPEN_KEYS: bool = True
 
 # do we virtualize lambda functions so they are pass-by-value?
-VIRTUAL_LAMBDAS: bool = False
+VIRTUAL_LAMBDAS: bool = True
 
 # do we serialize virtual function defaults or just use ARG_DEFAULT placeholder?
-VIRTUAL_FUNCTION_DEFAULTS: Literal['all', 'atoms', None] = 'atoms'
+VIRTUAL_FUNCTION_DEFAULTS: Literal['all', 'atomic', 'compact', 'none'] = 'compact'
 
 # do we virtualize instances of ModuleType?
 VIRTUAL_MODULES: bool = True
 
-# do we virtualize objects satisfying the iterator interface as virtual iterators?
-VIRTUAL_ITERATORS: bool = False
+# do we virtualize objects that are a known, system generator or iterator?
+VIRTUAL_ITERATORS: bool = True
 
 # do we virtualize instances of asyncio.Future?
 VIRTUAL_FUTURES: bool = True
 
 # do we virtualize instances of CoroutineType?
 VIRTUAL_COROUTINES: bool = True
+
+# do we virtualize non-system exceptions?
+VIRTUAL_EXCEPTIONS: bool = True
 
 # is v_obj.__setattr__ and v_obj.__delattr__ virtualized?
 VIRTUAL_OBJECT_MUTATION: bool = True
@@ -61,11 +71,11 @@ OMIT_PRIVATE_ANNOS: bool = True
 # do we whitelist known dunder methods like __contains__?
 ALLOW_KNOWN_DUNDER_METHODS: bool = True
 
-# TODO: describe
-REALIZE_SYSTEM_ITERATORS: bool = True
+# do we reduce non-realized builtin iterator instances to pass them by value?
+REALIZE_ITERATOR_LIMIT: int = 4
 
-# TODO: describe
-ITERTOOLS_REDUCE_OBJ: bool = True
+# do we actually believe the defaults claimed by __text_signature__ C functions?
+BELIEVE_TEXT_SIGNATURE_DEFAULTS: bool = False
 
 # TODO: describe
 TYPE_ERASE_ENUMS: bool = True
@@ -73,6 +83,11 @@ TYPE_ERASE_ENUMS: bool = True
 # do we produce 5 instead of NumberMsg(5), etc?
 INLINE_ATOMS: list[type] = []
 
+# if we allow decoding of inline files (back to Paths), where should they go?
+INLINE_FILE_DIRECTORY: 'Path | None' = None
+
+# do we capture basic info from the top of the stack when a VRR occurs? good for debugging
+SEND_VIRTUAL_REQUEST_ORIGIN: bool = True
 
 # ------------------------------------------------------------------------------
 

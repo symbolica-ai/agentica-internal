@@ -11,12 +11,33 @@ __all__ = [
 ################################################################################
 
 if TYPE_CHECKING:
-    from .rpc_legacy import LegacyRPCMsg
+    from .term_result import ResultMsg
+    from .term import TermMsg
+    from .resource_def import DefinitionMsg
+    from .msg_aliases import SrcLocationMsg
 
 ################################################################################
 
 class RPCMsg(Msg):
     """ABC for RPC messages, whether requests or replies."""
 
-    def downgrade(self) -> 'LegacyRPCMsg':
-        raise NotImplementedError(type(self).downgrade)
+    if TYPE_CHECKING:
+        origin: SrcLocationMsg
+
+    ################################################################################
+
+    def get_result_msg(self) -> 'ResultMsg | None':
+        return None
+
+    def get_term_msg(self) -> 'TermMsg | None':
+        if msg := self.get_result_msg():
+            return msg.value
+        return None
+
+    def get_error_msg(self) -> 'TermMsg | None':
+        if msg := self.get_result_msg():
+            return msg.error
+        return None
+
+    def get_definition_msgs(self) -> 'Tup[DefinitionMsg] | None':
+        return None

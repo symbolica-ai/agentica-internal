@@ -16,6 +16,8 @@ from ..resource.all import *
 from ..resource.logging import LOG_VIRT
 from ..request.all import *
 from ..events import *
+from ..data.identifier import get_stack_identifier
+
 from .interface import *
 
 LOG_SEND = LogFlag('_+SEND')

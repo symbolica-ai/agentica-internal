@@ -1,6 +1,6 @@
 # fmt: off
 from datetime import datetime
-from collections.abc import Callable, Iterable as Iter
+from collections.abc import Callable, Iterable as Iter, Sequence as Seq
 from re import MULTILINE, compile as compile_regex
 from typing import Any
 
@@ -31,6 +31,10 @@ __all__ = [
     'pathsafe_str',
     'idsafe_str',
     'timestamp_str',
+    'forward_args_str',
+    'forward_kwargs_str',
+    'forward_call_str',
+    'def_params_str'
 ]
 
 ####################################################################################################
@@ -153,7 +157,7 @@ def dict_str(dct: dict[str, Any], fn: ToStr, ml: bool = False, sort: bool = True
 def dict_kv_str(keys: Strs, vals: Strs, ml: bool = False) -> str:
     if has_nl(vals) or ml:
         return comma_indented_str('{', '}', (f'{k!r}: {v}' for k, v in zip(keys, vals)))
-    return '{' + ', '.join(f'{k!r}: {v}' for k, v in zip(keys, vals)) + '}'
+    return '{' + commas(f'{k!r}: {v}' for k, v in zip(keys, vals)) + '}'
 
 
 def headed_str(head: str, seq: Strs) -> str:
@@ -163,7 +167,7 @@ def headed_str(head: str, seq: Strs) -> str:
 def fn_call_str(fn: str, args: Strs, kwargs: dict[str, str]) -> str:
     args = list(args)
     args.extend(f'{k}={v}' for k, v in kwargs.items())
-    f_args = ', '.join(args)
+    f_args = commas(args)
     return f'{fn}({f_args})'
 
 
@@ -188,6 +192,48 @@ def timestamp_str() -> str:
     # yymmdd-hhmm-micros
     # 251204-1428-340565
     return datetime.now().strftime("%y%m%d-%H%M%S-%f")
+
+commas = ', '.join
+
+####################################################################################################
+
+def forward_args_str(strs: Seq[str], star: str | None) -> str:
+    if not strs:
+        return star or '()'
+    joined = commas(strs)
+    extra = f' *{star}' if star else ''
+    return f'({joined},{extra})'
+
+####################################################################################################
+
+def forward_kwargs_str(strs: Seq[str], star: str | None) -> str:
+    if not strs:
+        return star or '{}'
+    joined = commas(f'{k}={k}' for k in strs)
+    extra = f', **{star}' if star else ''
+    return f'dict({joined}{extra})'
+
+####################################################################################################
+
+def forward_call_str(pos: Seq[str], key: Seq[str], pos_star: str | None, key_star: str | None) -> str:
+    strs = list(pos)
+    if pos_star: strs.append(f'*{pos_star}')
+    strs.extend(f'{k}={k}' for k in key)
+    if key_star: strs.append(f'**{key_star}')
+    return commas(strs)
+
+####################################################################################################
+
+def def_params_str(pos: Seq[str], key: Seq[str], pos_star: str | None, key_star: str | None, pos_only: int,
+                   f: Callable[[str], str]) -> str:
+    r = []
+    if pos:      r.extend(map(f, pos))
+    if pos_only: r.insert(pos_only, '/')
+    if pos_star: r.append('*' + f(pos_star))
+    elif key:    r.append('*')
+    if key:      r.extend(map(f, key))
+    if key_star: r.append('**' + f(key_star))
+    return commas(r)
 
 ####################################################################################################
 

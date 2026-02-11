@@ -64,6 +64,8 @@ class SysObjectIDs(IntEnum):
     magicStackTrace        = -303
     magicLen               = -304
     magicKeys              = -305
+    magicStr               = -306
+
     magicInstanceof        = -310  # NOT IMPLEMENTED
     Object_entries         = -401
     Object_keys            = -402

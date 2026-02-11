@@ -8,21 +8,29 @@ __all__ = [
     'ArgsMsg',
     'KwargsMsg',
     'AnnotationsMsg',
-    'ResourcesRecordMsg',
     'AttributesMsg',
-    'ClassesTupleMsg',
-    'OverloadsMsg',
     'MethodMsg',
     'MethodsMsg',
+    'TypeMsg',
+    'ClassMsg',
+    'ObjectMsg',
+    'FunctionMsg',
+    'ClassMsg',
+    'ModuleMsg',
+    'FutureMsg',
+    'PropertyMsg',
+    'ExceptionRefMsg',
+    'PropertiesMsg',
+    'SrcLocationMsg'
 ]
 
 
 ################################################################################
 
 if TYPE_CHECKING:
-    from .resource_data import FunctionDataMsg
     from .term import TermMsg
-    from .term_resource import ResourceMsg
+    from .term_resource import ResourceMsg, LocalResourceMsg
+    from ..data.identifier import Identifier
 
 ################################################################################
 
@@ -30,10 +38,21 @@ if TYPE_CHECKING:
 
 type ArgsMsg            = Tup['TermMsg']
 type KwargsMsg          = Rec['TermMsg']
-type AnnotationsMsg     = Rec['ResourceMsg']
 type AttributesMsg      = Rec['TermMsg']
-type ClassesTupleMsg    = Tup['ResourceMsg']
-type OverloadsMsg       = Tup['FunctionDataMsg']
-type ResourcesRecordMsg = Rec['ResourceMsg']
+
 type MethodMsg          = tuple[MethodKind, 'ResourceMsg']
 type MethodsMsg         = Rec[MethodMsg]
+
+type TypeMsg            = TermMsg
+type ClassMsg           = ResourceMsg
+type ObjectMsg          = ResourceMsg
+type FunctionMsg        = ResourceMsg
+type ModuleMsg          = ResourceMsg
+type PropertyMsg        = ResourceMsg
+type ExceptionRefMsg    = ResourceMsg
+type FutureMsg          = LocalResourceMsg
+
+type AnnotationsMsg     = Rec['TermMsg']
+type PropertiesMsg      = Rec['ResourceMsg']
+
+type SrcLocationMsg     = Identifier | None

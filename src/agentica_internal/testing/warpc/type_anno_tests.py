@@ -1,6 +1,5 @@
 # fmt: off
 
-import asyncio
 from typing import *
 
 from agentica_internal.core.type import anno_str
@@ -98,31 +97,7 @@ def verify_normalizing_unions():
     assert encode_decode_union(True, ()) is NoReturn
 
 
-def verify_annotation_equality_sync(anno: Any):
-    return asyncio.run(verify_annotation_equality(anno))
-
-
-def verify_class_annotation_equality_sync(anno: Any):
-    return asyncio.run(verify_class_annotation_equality(anno))
-
-
-def verify_annotations():
-    run_object_tests(verify_annotation_equality_sync, ANNOS, on_error='s')
-
-
-def verify_class_annotations():
-    run_object_tests(verify_class_annotation_equality_sync, CLASSES, on_error='s')
-
-
-
-def collect_anno_events(events: list):
-    for anno in ANNOS:
-        verify_annotation_equality_sync(anno).collect_events(events)
-    for cls in CLASSES:
-        verify_class_annotation_equality_sync(cls).collect_events(events)
-
-
 if __name__ == '__main__':
-    verify_annotations()
     verify_normalizing_unions()
-    verify_class_annotations()
+    run_object_tests(verify_annotation_equality, ANNOS, on_error='s')
+    run_object_tests(verify_class_annotation_equality, CLASSES, on_error='s')

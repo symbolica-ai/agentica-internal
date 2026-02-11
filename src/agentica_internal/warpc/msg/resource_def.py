@@ -28,6 +28,9 @@ class DefinitionMsg(Msg, tag='def'):
         from .term_resource import UserResourceMsg
         return UserResourceMsg(self.rid)
 
+    def __debug_info_str__(self) -> str:
+        return f'rid={f_grid(self.rid)}, data={self.data.shape}'
+
     def __shape__(self) -> str:
         return f_grid(self.rid) + ', ' + self.data.shape
 

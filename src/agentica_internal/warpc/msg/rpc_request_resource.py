@@ -23,8 +23,9 @@ __all__ = [
 
 if TYPE_CHECKING:
     from ..request.request_resource import *
+    from .msg_aliases import *
     from .term import TermMsg
-    from .term_resource import ResourceMsg, SystemResourceMsg
+    from .term_resource import SystemResourceMsg
 
 ################################################################################
 
@@ -51,9 +52,9 @@ class ResourceCallRequestMsg(ResourceRequestMsg):
 class ResourceNewMsg(ResourceCallRequestMsg, tag='new'):
     """Describes a call to create an instance of a virtualized class."""
 
-    cls: 'ResourceMsg'
-    pos: 'Tup[TermMsg]' = ()
-    key: 'Rec[TermMsg]' = {}
+    cls: 'ClassMsg'
+    pos: 'ArgsMsg' = ()
+    key: 'KwargsMsg' = {}
 
     def __shape__(self) -> str:
         return self.cls.shape
@@ -72,9 +73,9 @@ class ResourceNewMsg(ResourceCallRequestMsg, tag='new'):
 class ResourceCallFunctionMsg(ResourceCallRequestMsg, tag='call'):
     """Describes a call to a function."""
 
-    fun: 'ResourceMsg'
-    pos: 'Tup[TermMsg]' = ()
-    key: 'Rec[TermMsg]' = {}
+    fun: 'FunctionMsg'
+    pos: 'ArgsMsg' = ()
+    key: 'KwargsMsg' = {}
 
     def __shape__(self) -> str:
         return self.fun.shape
@@ -93,10 +94,10 @@ class ResourceCallFunctionMsg(ResourceCallRequestMsg, tag='call'):
 class ResourceCallMethodMsg(ResourceCallRequestMsg, tag='callmethod'):
     """Describes a call to a named method of an object."""
 
-    obj: 'ResourceMsg'
+    obj: 'ObjectMsg'
     mth:  Name
-    pos: 'Tup[TermMsg]' = ()
-    key: 'Rec[TermMsg]' = {}
+    pos: 'ArgsMsg' = ()
+    key: 'KwargsMsg' = {}
 
     def __shape__(self) -> str:
         return f'{self.obj.shape},{self.mth!r}'
@@ -117,7 +118,7 @@ class ResourceCallSystemMethodMsg(ResourceCallRequestMsg, tag='callsys'):
     """Describes a call like `hash(obj)` or `str(obj)` that invokes a special
     dunder method on the object."""
 
-    obj: 'ResourceMsg'
+    obj: 'ObjectMsg'
     fun: 'SystemResourceMsg'
 
     def __shape__(self) -> str:
@@ -136,8 +137,8 @@ class ResourceCallSystemMethodMsg(ResourceCallRequestMsg, tag='callsys'):
 class ResourceAttrRequestMsg(ResourceRequestMsg):
     """ABC for request messages referring to attributes."""
 
-    obj: 'ResourceMsg'
-    attr: Name
+    obj: 'ObjectMsg'
+    attr: str | tuple[str, ...]
 
     def __shape__(self) -> str:
         return f'{self.obj.shape},{self.attr!r}'

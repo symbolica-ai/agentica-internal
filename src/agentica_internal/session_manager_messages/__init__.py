@@ -1,6 +1,7 @@
 from .session_manager_messages import (
     DEFAULT_PROTOCOL,
     AllServerMessage,
+    CacheTTL,
     CreateAgentRequest,
     InteractionCodeBlock,
     InteractionEvent,
@@ -29,6 +30,7 @@ from .session_manager_messages import (
 
 __all__ = [
     "AllServerMessage",
+    "CacheTTL",
     "CreateAgentRequest",
     "ReasoningEffort",
     "PromptTemplate",

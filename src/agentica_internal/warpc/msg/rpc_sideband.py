@@ -1,7 +1,5 @@
 # fmt: off
 
-from agentica_internal.warpc.msg.rpc_legacy import LegacyMFIReplyMsg
-
 from .__ import *
 from .rpc import RPCMsg
 
@@ -17,9 +15,9 @@ __all__ = [
 ################################################################################
 
 if TYPE_CHECKING:
-    from .rpc_result import ResultMsg
+    from .term_result import ResultMsg
     from .resource_def import DefinitionMsg
-    from .rpc_legacy import LegacyMFIReplyMsg
+    from .msg_aliases import SrcLocationMsg
 
 ################################################################################
 
@@ -34,20 +32,21 @@ class ChannelMsg(SidebandMsg, tag='chan'):
 
     LOG_TAGS = 'CHANNEL'
 
-    data: 'ResultMsg | None'
-    last: bool
-    defs: 'Tup[DefinitionMsg]' = ()
+    data:   'ResultMsg | None'
+    last:   bool
+    defs:   'Tup[DefinitionMsg]' = ()
+    origin: 'SrcLocationMsg' = None
 
     def __shape__(self) -> str:
         return self.data.shape
 
     @staticmethod
-    def encode(enc: EncoderP, value: Result, last: bool) -> 'ChannelMsg':
+    def encode(enc: EncoderP, value: Result, last: bool, src_loc: 'SrcLocationMsg') -> 'ChannelMsg':
         enc_ctx = enc.enc_context()
         with enc_ctx:
-            value_msg = ResultMsg.encode(enc, value)
+            value_msg = ResultMsg.encode(value, enc)
         def_msgs = enc_ctx.enc_context_defs()
-        return ChannelMsg(value_msg, last, def_msgs)
+        return ChannelMsg(value_msg, last, def_msgs, src_loc)
 
     def decode(self, dec: DecoderP) -> Result | Closed:
         if self.data is None:
@@ -58,6 +57,11 @@ class ChannelMsg(SidebandMsg, tag='chan'):
             value = self.data.decode(dec)
         return value
 
+    ############################################################################
+
+    def get_result_msg(self) -> 'ResultMsg | None':
+        return self.data
+
 
 CHANNEL_CLOSED_MSG = ChannelMsg(None, True)
 
@@ -67,7 +71,8 @@ CHANNEL_CLOSED_MSG = ChannelMsg(None, True)
 class RemotePrintMsg(SidebandMsg, tag='print'):
     """Message causing a print to happen when decoded locally."""
 
-    text: str
+    text:    str
+    origin: 'SrcLocationMsg' = None
 
 
 ################################################################################
@@ -75,9 +80,11 @@ class RemotePrintMsg(SidebandMsg, tag='print'):
 class FutureResultMsg(SidebandMsg, tag='futureid'):
     """Deliver the result of a Future with a given ID (string or integer)."""
 
-    fid:  'FutureID'
-    data: 'ResultMsg'
+    fid:    'FutureID'
+    result: 'ResultMsg'
+    origin: 'SrcLocationMsg' = None
 
-    def downgrade(self) -> 'LegacyMFIReplyMsg':
-        from .rpc_legacy import LegacyMFIReplyMsg
-        return LegacyMFIReplyMsg(mid=-1, fid=0, info=self.data)
+    ############################################################################
+
+    def get_result_msg(self) -> 'ResultMsg | None':
+        return self.result

@@ -19,6 +19,7 @@ type FutureHandler = Callable[[FutureT], Any]
 class FutureData(ResourceData):
     __slots__ = 'future', 'result'
 
+    KIND = Kind.Future
     future: FutureT  # the existing real / novel virtual future created by `id_to_future`
     result: Result   # value/exception if done, PENDING_RESULT / CANCELED_RESULT if not
 

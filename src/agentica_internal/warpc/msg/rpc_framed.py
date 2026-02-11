@@ -10,24 +10,24 @@ __all__ = [
     'FramedResponseMsg',
 ]
 
-
 ################################################################################
 
 if TYPE_CHECKING:
     from ..request.base import Request
     from .resource_def import DefinitionMsg
     from .rpc_request import RequestMsg
-    from .rpc_result import ResultMsg
-    from .rpc_legacy import *
+    from .term_result import ResultMsg
+    from .msg_aliases import SrcLocationMsg
 
 ################################################################################
 
 class FramedMsg(RPCMsg):
     """ABC for RPC messages that are associated with frames."""
 
-    mid:   MessageID
-    fid:   FrameID
-    defs: 'Tup[DefinitionMsg]'
+    if TYPE_CHECKING:
+        mid:   MessageID
+        fid:   FrameID
+        defs: 'Tup[DefinitionMsg]'
 
     @property
     def thread_name(self) -> str:
@@ -44,7 +44,7 @@ class FramedMsg(RPCMsg):
 
 ################################################################################
 
-class FramedRequestMsg(RPCMsg, tag='req?'):
+class FramedRequestMsg(FramedMsg, tag='req?'):
     """
     Message for all requests associated with a frame.
 
@@ -59,46 +59,42 @@ class FramedRequestMsg(RPCMsg, tag='req?'):
 
     mid:       MessageID
     fid:       FrameID
-    data:     'RequestMsg'
+    request:  'RequestMsg'
     fmt:      'EncodeFmt' = 'full'
     defs:     'Tup[DefinitionMsg]' = ()
 
     async_mode: AsyncMode = None
+    origin:    'SrcLocationMsg' = None
 
     @property
     def is_async(self) -> bool:
-        return self.async_mode in ('coro', 'future') or self.data.is_async
-
-    # --------------------------------------------------------------------------
-
-    @property
-    def pid(self) -> FrameID:
-        return self.fid  # for now!
+        return self.async_mode in ('coro', 'future') or self.request.is_async
 
     # --------------------------------------------------------------------------
 
     def __shape__(self) -> str:
-        return f_id(self.mid) + ', ' + self.data.shape
+        return f_id(self.mid) + ', ' + self.request.shape
 
     def __debug_info_str__(self) -> str:
-        return 'mid=' + f_id(self.mid)
+        return f'mid={f_id(self.mid)}, data={self.request.TAG}'
 
     @property
     def thread_name(self) -> str:
-        return f'{self.msg_tag}#{f_id(self.mid)}:{self.data.msg_tag}'
+        return f'{self.msg_tag}#{f_id(self.mid)}:{self.request.msg_tag}'
 
     # --------------------------------------------------------------------------
 
     def decode_request(self, dec: DecoderP) -> 'Request':
         dec_ctx = dec.dec_context(self.defs)
         with dec_ctx:
-            request = self.data.decode(dec)
+            request = self.request.decode(dec)
         if self.async_mode:
             return request.set_async_mode(self.async_mode)
         return request
 
     @staticmethod
-    def encode_request(enc: EncoderP, mid: MessageID, fid: FrameID, request: 'Request') -> 'FramedRequestMsg':
+    def encode_request(enc: EncoderP, mid: MessageID, fid: FrameID, request: 'Request',
+                       src_loc: 'SrcLocationMsg' = None) -> 'FramedRequestMsg':
         enc_ctx = enc.enc_context()
         with enc_ctx:
             request_msg = request.encode(enc)
@@ -106,28 +102,24 @@ class FramedRequestMsg(RPCMsg, tag='req?'):
         async_mode = getattr(request, 'async_mode', None)
         return FramedRequestMsg(
             mid=mid, fid=fid,
-            data=request_msg,
+            request=request_msg,
             defs=defs,
             async_mode=async_mode,
+            origin=src_loc
         )
 
     def encode_response(self, enc: EncoderP, result: Result) -> 'FramedResponseMsg':
-        from .rpc_result import ResultMsg
+        from .term_result import ResultMsg
         enc_ctx = enc.enc_context()
         with enc_ctx:
-            result_msg = ResultMsg.encode(enc, result, self.fmt)
+            result_msg = ResultMsg.encode_as(result, enc, self.fmt)
         def_msgs = enc_ctx.enc_context_defs()
-        return FramedResponseMsg(mid=self.mid, fid=self.fid, data=result_msg, defs=def_msgs)
+        return FramedResponseMsg(mid=self.mid, fid=self.fid, result=result_msg, defs=def_msgs)
 
-    def downgrade(self) -> 'LegacyResourceRequestMsg':
-        from .rpc_legacy import LegacyResourceRequestMsg
-        from .rpc_request_resource import ResourceRequestMsg
-        assert isinstance(self.data, ResourceRequestMsg)
-        return LegacyResourceRequestMsg(mid=self.mid, fid=self.fid, pid=self.fid, info=self.data)
 
 ################################################################################
 
-class FramedResponseMsg(RPCMsg, tag='reply!'):
+class FramedResponseMsg(FramedMsg, tag='reply!'):
     """
     A response to a `FramedRequestMsg`.
 
@@ -138,29 +130,26 @@ class FramedResponseMsg(RPCMsg, tag='reply!'):
     * `defs`: any auxiliary resource definitions needed to decode the reply
     """
 
-    fid:   FrameID
-    mid:   MessageID
-    data: 'ResultMsg'
-    defs: 'Tup[DefinitionMsg]' = ()
+    fid:     FrameID
+    mid:     MessageID
+    result: 'ResultMsg'
+    defs:   'Tup[DefinitionMsg]' = ()
 
-    @property
-    def pid(self) -> FrameID:
-        return self.fid  # for now!
+    origin: 'SrcLocationMsg' = None
 
     def __shape__(self) -> str:
-        return f_id(self.mid) + ', ' + self.data.shape
+        return f_id(self.mid) + ', ' + self.result.shape
 
     def __debug_info_str__(self) -> str:
-        return 'mid=' + f_id(self.mid)
+        return f'mid={f_id(self.mid)}, data={self.result.TAG}'
 
     def decode_response(self, dec: DecoderP) -> 'Result':
         dec_ctx = dec.dec_context(self.defs)
         with dec_ctx:
-            result = self.data.decode(dec)
+            result = self.result.decode(dec)
         return result
 
-    def downgrade(self) -> 'LegacyResourceReplyMsg':
-        from .rpc_legacy import LegacyResourceReplyMsg
-        from .rpc_result import ResultMsg
-        assert isinstance(self.data, ResultMsg)
-        return LegacyResourceReplyMsg(mid=self.mid, fid=self.fid, pid=self.fid, info=self.data)
+    ############################################################################
+
+    def get_result_msg(self) -> 'ResultMsg | None':
+        return self.result

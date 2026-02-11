@@ -6,8 +6,8 @@ from .__ import *
 __all__ = [
     'Msg',
 ]
-################################################################################
 
+################################################################################
 
 def to_tag(s: str):
     return s.removesuffix('Msg').replace('Request', 'Req').replace('Control', 'Ctrl')
@@ -48,6 +48,8 @@ class Msg(TranscodablePythonMessage, tag=True, tag_field="msg", frozen=(not TYPE
     # this is populated for every class, in __final__.py, when all classes have been defined
     LEAF_CLASSES: ClassVar[tuple[type['Msg'], ...]] = ()
 
+    __debug_fmt_str__ = '<{cls} {info}>'
+
     ############################################################################
 
     @property
@@ -67,14 +69,6 @@ class Msg(TranscodablePythonMessage, tag=True, tag_field="msg", frozen=(not TYPE
 
     ############################################################################
 
-    def upgrade(self) -> Self:
-        return self
-
-    def downgrade(self) -> Self:
-        return self
-
-    ############################################################################
-
     # hides BLANK fields
     def repr(self, deep: bool = True) -> str:
         f_cls = self.__class__.__name__
@@ -88,14 +82,18 @@ class Msg(TranscodablePythonMessage, tag=True, tag_field="msg", frozen=(not TYPE
     def __repr__(self) -> str:
         return self.repr()
 
-    def msgpack_str(self, multiline: bool = True) -> str:
+    def __debug_info_str__(self) -> str:
+        return ''
+
+    def msgpack_str(self, multiline: bool = True, censor_ids: bool = False) -> str:
         data = self.to_msgpack()
-        return fmt_msgpack(data, multiline=multiline)
+        return fmt_msgpack(data, multiline=multiline, censor_ids=censor_ids)
 
     ############################################################################
 
     def pprint(self, err: bool = False):
-        P.pprint(self, err=err)
+        from ...core.fmt import f_slot_obj
+        P.rprint(f_slot_obj(self), err=err)
 
     def pprint_msgpack(self, err: bool = False):
         data = self.to_msgpack()

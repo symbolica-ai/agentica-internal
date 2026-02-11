@@ -13,6 +13,7 @@ __all__ = [
 class CoroutineData(ResourceData):
     __slots__ = 'name', 'qname'
 
+    KIND = Kind.Coroutine
     FORBIDDEN_FORM = forbidden_object
 
     name: str

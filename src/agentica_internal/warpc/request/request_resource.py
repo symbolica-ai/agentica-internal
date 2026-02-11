@@ -156,6 +156,15 @@ class ResourceCallFunction(ResourceCallRequest):
         fun_name = getattr(self.fun, '__qualname__')
         return fun_name
 
+    def print(self):
+        P.nprint("ResourceCallFunction(")
+        P.nprint("FUN", self.fun)
+        for i, v in enumerate(self.pos):
+            P.nprint("POS", i, v)
+        for k, v in self.key.items():
+            P.nprint("KEY", k, v)
+        P.nprint(")")
+
     def encode(self, enc) -> 'ResourceCallFunctionMsg':
         from ..msg.rpc_request_resource import ResourceCallFunctionMsg
         return ResourceCallFunctionMsg(
@@ -244,7 +253,7 @@ class ResourceAttrRequest(ResourceRequest, ABC):
     __slots__ = __match_args__ = 'obj', 'attr',
 
     obj:  object
-    attr: str
+    attr: str | tuple[str, ...]
 
 
 ################################################################################
@@ -253,11 +262,18 @@ class ResourceHasAttr(ResourceAttrRequest):
     __slots__ = __match_args__ = 'obj', 'attr',
 
     def __init__(self, obj: object, attr: str):
+        if type(attr) not in (str, tuple):
+            bad_attr(attr)
         self.obj = obj
         self.attr = attr
 
     def __execute__(self):
-        return hasattr(self.obj, self.attr)
+        obj = self.obj
+        attr = self.attr
+        if isinstance(attr, tuple):
+            return tuple(hasattr(obj, a) for a in attr)
+        else:
+            return hasattr(obj, self.attr)
 
     def encode(self, enc) -> 'ResourceHasAttrMsg':
         from ..msg.rpc_request_resource import ResourceHasAttrMsg
@@ -275,14 +291,19 @@ class ResourceHasAttr(ResourceAttrRequest):
 class ResourceGetAttr(ResourceAttrRequest):
     __slots__ = __match_args__ = 'obj', 'attr',
 
-    def __init__(self, obj: object, attr: str):
-        if type(attr) is not str:
+    def __init__(self, obj: object, attr: str | tuple[str, ...]):
+        if type(attr) not in (str, tuple):
             bad_attr(attr)
         self.obj = obj
         self.attr = attr
 
     def __execute__(self):
-        return getattr(self.obj, self.attr)
+        obj = self.obj
+        attr = self.attr
+        if isinstance(attr, tuple):
+            return tuple(getattr(obj, a, FIELD_ABSENT) for a in attr)
+        else:
+            return getattr(obj, self.attr)
 
     def encode(self, enc) -> 'ResourceGetAttrMsg':
         from ..msg.rpc_request_resource import ResourceGetAttrMsg
@@ -300,14 +321,20 @@ class ResourceGetAttr(ResourceAttrRequest):
 class ResourceDelAttr(ResourceAttrRequest):
     __slots__ = __match_args__ = 'obj', 'attr',
 
-    def __init__(self, obj: object, attr: str):
-        if type(attr) is not str:
+    def __init__(self, obj: object, attr: str | tuple[str, ...]):
+        if type(attr) not in (str, tuple):
             bad_attr(attr)
         self.obj = obj
         self.attr = attr
 
     def __execute__(self):
-        delattr(self.obj, self.attr)
+        obj = self.obj
+        attr = self.attr
+        if isinstance(attr, tuple):
+            for a in attr:
+                delattr(obj, a)
+        else:
+            delattr(obj, attr)
 
     def encode(self, enc) -> 'ResourceDelAttrMsg':
         from ..msg.rpc_request_resource import ResourceDelAttrMsg
@@ -329,15 +356,23 @@ class ResourceSetAttr(ResourceAttrRequest):
     attr: str
     val: Any
 
-    def __init__(self, obj: object, attr: str, val: Any):
-        if type(attr) is not str:
+    def __init__(self, obj: object, attr: str | tuple[str, ...], val: Any):
+        if type(attr) not in (str, tuple):
             bad_attr(attr)
         self.obj = obj
         self.attr = attr
         self.val = val
 
     def __execute__(self):
-        setattr(self.obj, self.attr, self.val)
+        obj = self.obj
+        attr = self.attr
+        val = self.val
+        if isinstance(attr, tuple):
+            assert isinstance(val, tuple)
+            for a, v in zip(attr, val):
+                setattr(obj, a, v)
+        else:
+            setattr(obj, attr, val)
 
     def encode(self, enc) -> 'ResourceSetAttrMsg':
         from ..msg.rpc_request_resource import ResourceSetAttrMsg

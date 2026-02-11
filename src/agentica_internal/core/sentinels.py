@@ -1,6 +1,7 @@
 # fmt: off
 
-from typing import ClassVar, TypeGuard
+from typing import ClassVar, TypeGuard, Self
+from collections.abc import Callable
 
 from .hashing import raw_str_hash
 
@@ -10,6 +11,7 @@ __all__ = [
     'FalseSentinel',
     'ArgDefault',
     'FieldAbsent',
+    'OnDemand',
     'Pending',
     'Closed',
     'Canceled',
@@ -17,6 +19,7 @@ __all__ = [
     'NO_VALUE',
     'ARG_DEFAULT',
     'FIELD_ABSENT',
+    'ON_DEMAND',
     'CLOSED',
     'PENDING',
     'CANCELED',
@@ -26,6 +29,7 @@ __all__ = [
     'SENTINEL_OBJS',
     'SENTINELS',
     'is_sentinel',
+    'getter'
 ]
 
 ###############################################################################
@@ -41,11 +45,13 @@ class Sentinel:
 
     hval: ClassVar[int]
     name: ClassVar[str]
+    caps: ClassVar[str]
     inst: ClassVar['Sentinel']
 
-    def __init_subclass__(cls, name: str):
+    def __init_subclass__(cls, name: str, caps: str | None = None):
         cls.name = name
         cls.inst = inst = object.__new__(cls)
+        cls.caps = caps or name
         cls.hval = raw_str_hash(name) ^ 0x1234
         inst.__hash_value__ = cls.hval
         SENTINEL_TYPES.add(cls)
@@ -68,6 +74,12 @@ class Sentinel:
     def __ne__(self, other) -> bool:
         return self is not other
 
+    def const(self) -> Callable[..., Self]:
+        return lambda *_, **__: self
+
+    def replace_with(self, new) -> Callable[[object], object]:
+        return lambda x: new if x is self else x
+
     __short_str__ = __repr__
 
 
@@ -81,12 +93,13 @@ class FalseSentinel(Sentinel, name=''):
 ###############################################################################
 
 class NoValue(FalseSentinel,     name='NO_VALUE'): ...
-class ArgDefault(FalseSentinel,  name='...'): ...
+class ArgDefault(FalseSentinel,  name='...', caps='ARG_DEFAULT'): ...
 class FieldAbsent(FalseSentinel, name='FIELD_ABSENT'): ...
 class Pending(FalseSentinel,     name='PENDING'): ...
 class Closed(FalseSentinel,      name='CLOSED'): ...
 class Canceled(FalseSentinel,    name='CANCELED'): ...
 class Errored(FalseSentinel,     name='ERRORED'): ...
+class OnDemand(FalseSentinel,    name='ON_DEMAND'): ...
 
 NO_VALUE     = NoValue()
 ARG_DEFAULT  = ArgDefault()
@@ -95,7 +108,14 @@ PENDING      = Pending()
 CLOSED       = Closed()
 CANCELED     = Canceled()
 ERRORED      = Errored()
+ON_DEMAND    = OnDemand()
 
+###############################################################################
+
+# for emulating dict.get
+def getter[K, V, D](dct: dict[K, V] | None, default: D = NO_VALUE) -> Callable[[K], V | D]:
+    if dct: return lambda k: dct.get(k, default)
+    else:   return lambda k: default
 
 ###############################################################################
 

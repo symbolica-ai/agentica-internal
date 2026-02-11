@@ -9,8 +9,15 @@ import msgspec.json
 import msgspec.msgpack
 
 from agentica_internal.core.print import colorize, hdiv, tprint
-from agentica_internal.warpc.messages import DefinitionMsg, ListMsg, RPCMsg, StrMsg, VarsMsg
-from agentica_internal.warpc.msg.term import TermMsg
+from agentica_internal.warpc.msg.all import (
+    Msg,
+    DefinitionMsg,
+    ListMsg,
+    RPCMsg,
+    StrMsg,
+    VarsMsg,
+    TermMsg,
+)
 from agentica_internal.warpc.worlds.interface import AsyncRecvBytes, AsyncSendBytes
 from agentica_internal.warpc_transcode.conv_utils import (
     LOG_TS,
@@ -19,6 +26,7 @@ from agentica_internal.warpc_transcode.conv_utils import (
     msg_TS_name_restoration,
     msg_uni_name_sanitization,
     order_defs,
+    f_uid_grid,
 )
 from agentica_internal.warpc_transcode.py_to_uni import py_to_uni_rpc
 from agentica_internal.warpc_transcode.uni_msgs import (
@@ -83,7 +91,7 @@ class TranscodingInterceptor(InterceptorProto):
         if self.logging:
             tprint(TRANS, *args)
 
-    def log_msg(self, msg: UniMsg | TermMsg):
+    def log_msg(self, msg: UniMsg | Msg):
         if self.logging:
             msg.pprint()
             hdiv()
@@ -219,12 +227,12 @@ class TranscodingInterceptor(InterceptorProto):
         # Transcode
         py_msg = uni_to_py_rpc(uni_msg, self.defn_ctx)
         self.log("transcode_to_py outgoing")
-        self.log(py_msg)
+        self.log_msg(py_msg)
         return py_msg
 
     def transcode_to_uni(self, py_msg: RPCMsg) -> RpcUniMsg:
         self.log("transcode_to_uni incoming")
-        self.log(py_msg)
+        self.log_msg(py_msg)
 
         self._msg_counter += 1
 
@@ -247,15 +255,32 @@ class TranscodingInterceptor(InterceptorProto):
         async def transcoded_recv_from_sdk() -> bytes:
             assert self._orig_recv_bytes is not None, "Transcoder recv_bytes is not set"
             warpc_msg = await self._orig_recv_bytes()
-            rpc_msg = json_to_rpc_uni(warpc_msg)
-            py_msg = self.transcode_to_py(rpc_msg)
+            rpc_msg: RpcUniMsg = json_to_rpc_uni(warpc_msg)
+            try:
+                py_msg = self.transcode_to_py(rpc_msg)
+            except Exception as e:
+                tprint(TRANS, f"{type(e).__name__} during TypeScript -> Python", err=True)
+                rpc_msg.pprint()
+                e.add_note(f"TS MSG={rpc_msg!r}")
+                raise
             return py_msg.to_msgpack()
 
         async def transcoded_send_to_sdk(data: bytes) -> None:
             assert self._orig_send_bytes is not None, "Transcoder send_bytes is not set"
             rpc_msg = RPCMsg.from_msgpack(data)
-            uni_msg = self.transcode_to_uni(rpc_msg)
+            try:
+                uni_msg = self.transcode_to_uni(rpc_msg)
+            except Exception as e:
+                tprint(TRANS, f"{type(e).__name__} during Python -> TypeScript", err=True)
+                rpc_msg.pprint()
+                e.add_note("PY MSG=" + rpc_msg.msgpack_str(multiline=False))
+                raise
             uni_msg_json = uni_to_json(uni_msg)
             await self._orig_send_bytes(uni_msg_json)
 
         return transcoded_recv_from_sdk, transcoded_send_to_sdk
+
+    def print_context(self):
+        print("TRANSCODER CONTEXT:")
+        for defn_id, defn_msg in self.defn_ctx.items():
+            print('*', f_uid_grid(defn_id), '\t', type(defn_msg).__name__)

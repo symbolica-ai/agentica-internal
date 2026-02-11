@@ -1,6 +1,6 @@
 [project]
 name = "agentica-internal"
-version = "0.3.2"
+version = "0.4.0"
 description = "Internal Agentica libraries"
 requires-python = ">=3.12.0,<3.14.0"
 dependencies = [
@@ -34,6 +34,12 @@ dev = [
     "vulture>=2.14",
     "pytest-cov>=7.0.0",
     "ruff>=0.14.5",
+    "numpy>=2.4.1",
+    "sympy>=1.14.0",
+    "scipy>=1.17.0",
+    "scikit-image>=0.26.0",
+    "pandas>=3.0.0",
+    "pydantic>=2.12.5",
 ]
 
 [build-system]
@@ -45,10 +51,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools_scm]
-version_scheme = "guess-next-dev"
-local_scheme = "no-local-version"
 
 [tool.uv]
 link-mode = "symlink"
@@ -66,7 +68,6 @@ addopts = "--cov=src --cov-report=html"
 exclude = [
     "src/agentica_internal/warpc/**/__.py",
     "src/agentica_internal/warpc/__preload.py",
-    "src/agentica_internal/cpython/shed/",
     "src/agentica_internal/cpython/ex/",
     "src/agentica_internal/testing/"
 ]

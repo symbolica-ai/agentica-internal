@@ -341,16 +341,50 @@ class BaseRepl(LogBase, AbstractRepl):
         curr_eval = self.curr_eval
         if curr_eval is None or not isinstance(globals_, ReplSymbols):
             return __import__(name, globals=globals_, locals=locals_, fromlist=fromlist, level=level)
+
+        log = self.logging
         self.on_import(curr_eval, name, fromlist)
-        set_global = self.set_global
+        if log: self.log('import_hook', (name, fromlist, level))
+
         module = self.get_module(name)
+
+        if fromlist:
+            if '*' in fromlist:
+                fromlist = list(fromlist)
+                fromlist.remove('*')
+                _all_ = getattr(module, '__all__', None)
+                if type(_all_) in (tuple, list) and all(type(a) is str for a in _all_):
+                    if log: self.log("expanding * to __all__ =", ' '.join(_all_))
+                    fromlist.extend(_all_)
+                else:
+                    _dir_ = tuple(s for s in dir(module) if not s.startswith('__'))
+                    if log: self.log("expanding * to dir() = ", ' '.join(_dir_))
+                    fromlist.extend(_dir_)
+
+            existing = module.__dict__
+            if missing := tuple(a for a in fromlist if a not in existing.keys()):
+                if getattrs_fn := getattr(type(module), '__getattrs__', None):
+                    if log: self.log("parallel getting missing attrs:", ' '.join(missing))
+                    getattrs_fn(module, tuple(fromlist))
+            temp = ModuleType(module.__name__)
+            temp.__dict__.update(
+                (a, getattr(module, a, None))
+                for a in fromlist
+            )
+            return temp
+
         if not fromlist:
-            root = name.split('.', 1)[0]
-            module = self.get_module(root)
-            set_global(root, module)
-        # else:
-        #     for name in fromlist:
-        #         set_global(name, getattr(module, name))
+            if '.' in name:  # `import foo.bar.baz` binds foo
+                root_name = name.split('.', 1)[0]
+                if root_module := self.get_module(root_name):
+                    module = root_module
+                    self.set_global(root_name, root_module)
+            else:
+                # this would be done anyway, but this ensures it is
+                # in get_loaded_modules
+                self.set_global(name, module)
+
+        if log: self.log('returning module:', module)
         return module
 
     def dir_hook(self, arg: object = NO_VALUE) -> list[str]:
@@ -417,14 +451,23 @@ class BaseRepl(LogBase, AbstractRepl):
     # --------------------------------------------------------------------------
 
     def get_module(self, name: str) -> ModuleType:
+
         if self.curr_eval:
             imported = self.curr_eval.imported
             if name not in imported:
                 imported.append(name)
         modules = self.__modules
+
         if module := modules.get(name):
             return module
-        modules[name] = module = self.load_module(name)
+
+        if '.' in name:
+            module = find_in_parent_module(name, modules)
+
+        if module is None:
+            module = self.load_module(name)
+
+        modules[name] = module
         return module
 
     def add_modules(self, *modules: ModuleType) -> None:
@@ -585,6 +628,26 @@ class BaseRepl(LogBase, AbstractRepl):
         if return_value is NO_VALUE:
             raise ReplException('last evaluation did not have a return value')
         return return_value
+
+################################################################################
+
+def find_in_parent_module(name: str, modules: dict[str, ModuleType]) -> ModuleType | None:
+    path = name.split('.')
+    for i in range(len(path)-1, 0, -1):
+        parent = '.'.join(path[:i])
+        module = modules.get(parent)
+        if isinstance(module, ModuleType):
+            found = module_get_path(module, path[i:])
+            if isinstance(found, ModuleType):
+                return found
+    return None
+
+def module_get_path(module: ModuleType, path: list[str]) -> ModuleType | None:
+    for elem in path:
+        module = getattr(module, elem, None)
+        if not isinstance(module, ModuleType):
+            return None
+    return module
 
 ################################################################################
 

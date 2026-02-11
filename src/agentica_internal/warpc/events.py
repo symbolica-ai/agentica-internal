@@ -1,5 +1,7 @@
 # fmt: off
 
+from ..core import print as P
+
 from collections.abc import Iterable
 from enum import IntEnum
 from typing import TypeVar, NamedTuple, Self, ClassVar, TYPE_CHECKING
@@ -7,6 +9,9 @@ from typing import TypeVar, NamedTuple, Self, ClassVar, TYPE_CHECKING
 
 __all__ = [
     'Tick',
+    'EventNumber',
+    'Nanoseconds',
+    'f_tick',
     'Direction',
     'Incoming',
     'Outgoing',
@@ -21,28 +26,44 @@ __all__ = [
     'OutgoingFrameExit',
     'IncomingFrameExit',
     'ResourceEvent',
-    'OutgoingResource',
-    'IncomingResource',
+    'DescribeResource',
+    'CreateResource',
+    'ChannelEvent',
+    'ChannelSend',
+    'ChannelReceive',
     'EventEvent',
     'IncomingEvent',
     'OutgoingEvent',
-    'MessageEvent',
-    'OutgoingMessage',
-    'IncomingMessage',
+    'RPCEvent',
+    'OutgoingRPC',
+    'IncomingRPC',
 ]
 
 
 ################################################################################
 
 if TYPE_CHECKING:
-    from .msg.rpc import RPCMsg
-    from .msg.rpc_event import EventMsg
-    from .msg.rpc_framed import FramedRequestMsg, FramedResponseMsg
-    from .resource.base import ResourceData
+    from .msg.all import EventMsg, FramedRequestMsg, FramedResponseMsg, \
+        TermMsg, ExceptionMsg, DefinitionMsg, RequestMsg, ResultMsg, ChannelMsg
+    from .resource.base import ResourceData, FunctionDataMsg, ClassDataMsg
 
 ################################################################################
 
-type Tick      = int
+type EventNumber = int
+type Nanoseconds = int
+type Tick      = tuple[EventNumber, Nanoseconds]
+
+def f_tick(tick: Tick, just: int = 0) -> str:
+    from ..core.fmt import f_nanos_time
+    # e.g. 324, 14:30:45.123456789
+    logical, nanos = tick
+    f_time = str(logical)
+    if just: f_time = f_time.ljust(just)
+    f_nanos = f_nanos_time(tick[1])
+    return f'{f_nanos} #{f_time}'
+
+################################################################################
+
 type EventType = type[Event]
 
 class Direction(IntEnum):
@@ -89,7 +110,8 @@ class Event:
 
     def line_str(self) -> str:
         line_args = '\t'.join(self.__line_args__())
-        return f"#{self.tick:<3}{line_args}"
+        tick = f_tick(self.tick, 5)
+        return f"{tick}{self.__icon__:<3} {line_args}"
 
     def __lt__(self, other: Self) -> bool:
         return self.tick < other.tick
@@ -101,17 +123,110 @@ class Event:
 
     def __line_args__(self) -> Iterable[str]: ...
 
+    def pprint(self):
+        from agentica_internal.core.fmt import f_slot_obj
+        P.oprint(f_slot_obj(self))
+
     @classmethod
     def dir(cls: type[E], d: Direction) -> type[E]:
         return cls.INCOMING if d else cls.OUTGOING
 
+    ################################################################################
+
+    # deconstructors
+
+    def request_msg(self) -> 'RequestMsg | None':
+        from .msg.all import FramedRequestMsg
+        match self:
+            case OutgoingFrameExit(request=FramedRequestMsg(request=msg)): return msg
+        return None
+
+    def result_msg(self) -> 'ResultMsg | None':
+        from .msg.all import FramedResponseMsg
+        match self:
+            case OutgoingFrameExit(response=FramedResponseMsg(result=msg)): return msg
+        return None
+
+    def return_value_msg(self) -> 'TermMsg | None':
+        if result := self.result_msg():
+            if result.done:
+                return result.value
+        return None
+
+    def raised_exception_msg(self) -> 'ExceptionMsg | None':
+        if result := self.result_msg():
+            if result.done:
+                return result.error
+        return None
+
+    def request_definition_msgs(self) -> 'tuple[DefinitionMsg, ...] | None':
+        match self:
+            case OutgoingFrameExit(request=FramedRequestMsg(defs=msgs)): return msgs
+        return None
+
+    def response_definition_msgs(self) -> 'tuple[DefinitionMsg, ...] | None':
+        match self:
+            case OutgoingFrameExit(request=FramedResponseMsg(defs=msgs)): return msgs
+        return None
+
+    def class_data_msg(self, name: str) -> 'ClassDataMsg | None':
+        from .msg.all import ClassDataMsg
+        match self:
+            case OutgoingFrameExit(response=FramedResponseMsg(defs=msgs)):
+                for m in msgs:
+                    d = m.data
+                    if isinstance(d, ClassDataMsg) and d.name == name: return d
+        return None
+
+    def function_data_msg(self, name: str) -> 'FunctionDataMsg | None':
+        from .msg.all import FunctionDataMsg
+        match self:
+            case OutgoingFrameExit(response=FramedResponseMsg(defs=msgs)):
+                for m in msgs:
+                    d = m.data
+                    if isinstance(d, FunctionDataMsg) and d.name == name: return d
+        return None
+
+    def outgoing_resource_data(self) -> 'ResourceData | None':
+        match self:
+            case DescribeResource(resource=data): return data
+        return None
+
+    def incoming_resource_data(self) -> 'ResourceData | None':
+        match self:
+            case CreateResource(resource=data): return data
+        return None
+
 
 ################################################################################
 
-class FrameEvent(Event):
+class OutgoingEvent(Event): __slots__ = ()
+class IncomingEvent(Event): __slots__ = ()
+
+################################################################################
+
+class RPCEvent(Event):
+    __slots__ = 'tick',
+
+    @property
+    def msg(self) -> 'RpcMsg': ...
+
+    def __short_args__(self):
+        yield self.msg.short_str()
+
+    def __line_args__(self):
+        yield self.msg.repr()
+
+
+class OutgoingRPC(RPCEvent, OutgoingEvent): __slots__ = ()
+class IncomingRPC(RPCEvent, IncomingEvent): __slots__ = ()
+
+################################################################################
+
+class FrameEvent(RPCEvent):
     __slots__ = 'tick', 'request'
 
-    tick:     Tick
+    tick:      Tick
     request:  'FramedRequestMsg'
 
 
@@ -120,8 +235,8 @@ class FrameEvent(Event):
 class FrameEnterEvent(FrameEvent):
     __slots__ = 'tick', 'request'
 
-    tick:    Tick
-    request:  'FramedRequestMsg'
+    tick:     Tick
+    request: 'FramedRequestMsg'
 
     def __init__(self, tick: Tick, request: 'FramedRequestMsg'):
         self.tick = tick
@@ -133,16 +248,18 @@ class FrameEnterEvent(FrameEvent):
     def __line_args__(self):
         yield self.request.repr()
 
+    @property
+    def msg(self) -> 'FramedRequestMsg':
+        return self.request
 
-class OutgoingFrameEnter(FrameEnterEvent):
-    __slots__ = 'tick', 'request'
+
+class OutgoingFrameEnter(FrameEnterEvent, OutgoingRPC):
+    __slots__ = ()
     __icon__  = '··>'
 
-
-class IncomingFrameEnter(FrameEnterEvent):
+class IncomingFrameEnter(FrameEnterEvent, IncomingRPC):
     __slots__ = 'tick', 'request'
     __icon__  = '<··'
-
 
 ################################################################################
 
@@ -162,29 +279,33 @@ class FrameExitEvent(FrameEvent):
         self.response = response
 
     def __short_args__(self):
-        yield str(self.start)
+        yield f_tick(self.start)
         yield self.request.short_str()
         yield self.response.short_str()
 
     def __line_args__(self):
-        # yield self.request.repr()
+        yield f_tick(self.start)
+        yield self.request.repr()
         yield self.response.repr()
-        yield f'#{self.start}'
+
+    @property
+    def msg(self) -> 'FramedResponseMsg':
+        return self.response
 
 
-class OutgoingFrameExit(FrameExitEvent):
+class OutgoingFrameExit(FrameExitEvent, OutgoingRPC):
     __slots__ = 'start', 'tick', 'request', 'response'
     __icon__  = '-->'
 
 
-class IncomingFrameExit(FrameExitEvent):
+class IncomingFrameExit(FrameExitEvent, IncomingRPC):
     __slots__ = 'start', 'tick', 'request', 'response'
     __icon__  = '<--'
 
 
 ################################################################################
 
-class EventEvent(Event):
+class EventEvent(RPCEvent):
     __slots__ = 'tick', 'event',
 
     tick:   Tick
@@ -194,61 +315,30 @@ class EventEvent(Event):
         self.tick = tick
         self.event = event
 
-    def __short_args__(self):
-        yield self.event.short_str()
-
-    def __line_args__(self):
-        yield self.event.repr()
+    @property
+    def msg(self) -> 'EventMsg':
+        return self.event
 
 
-class OutgoingEvent(EventEvent):
+class EventSend(EventEvent, OutgoingRPC):
     __slots__ = 'tick', 'event',
     __icon__  = '#->'
 
 
-class IncomingEvent(EventEvent):
+class EventReceive(EventEvent, IncomingRPC):
     __slots__ = 'tick', 'event',
     __icon__  = '<-#'
 
 
 ################################################################################
 
-class ResourceEvent(Event):
-    __slots__ = 'tick', 'resource',
+class ChannelEvent(RPCEvent):
+    __slots__ = 'tick', 'msg'
 
-    tick:    Tick
-    resource: 'ResourceData'
+    tick: 'Tick'
+    msg:  'ChannelMsg'
 
-    def __init__(self, tick: Tick, resource: 'ResourceData'):
-        self.tick = tick
-        self.resource = resource
-
-    def __short_args__(self):
-        yield self.resource.short_str()
-
-    def __line_args__(self):
-        yield self.resource.repr()
-
-
-class OutgoingResource(ResourceEvent):
-    __slots__ = 'tick', 'resource',
-    __icon__  = '@->'
-
-
-class IncomingResource(ResourceEvent):
-    __slots__ = 'tick', 'resource',
-    __icon__  = '<-@'
-
-
-################################################################################
-
-class MessageEvent(Event):
-    __slots__ = 'tick', 'msg',
-
-    tick:  Tick
-    msg:  'RPCMsg'
-
-    def __init__(self, tick: Tick, msg: 'RPCMsg'):
+    def __init__(self, tick: Tick, msg: 'ChannelMsg'):
         self.tick = tick
         self.msg = msg
 
@@ -256,17 +346,51 @@ class MessageEvent(Event):
         yield self.msg.short_str()
 
     def __line_args__(self):
-        yield self.msg.repr()
+        from agentica_internal.warpc.fmt import f_grid
+        yield self.msg.data.repr()
+        if not self.msg.defs: return
+        yield '\n┌─ defs ─┄'
+        for d in self.msg.defs:
+            yield f'\n {f_grid(d.rid)} := {d.repr()}'
+        yield '\n└────────┄'
+
+class ChannelSend(ChannelEvent, OutgoingRPC):
+    __slots__ = 'tick', 'term', 'defs'
+    __icon__  = '==>'
 
 
-class OutgoingMessage(Event):
-    __slots__ = 'tick', 'msg',
-    __icon__  = '*->'
+class ChannelReceive(ChannelEvent, IncomingRPC):
+    __slots__ = 'tick', 'term', 'defs'
+    __icon__  = '<=='
 
 
-class IncomingMessage(Event):
-    __slots__ = 'tick', 'msg',
-    __icon__  = '<-*'
+################################################################################
+
+class ResourceEvent(Event):
+    __slots__ = 'tick', 'data',
+
+    tick:      Tick
+    data: 'ResourceData'
+
+    def __init__(self, tick: Tick, data: 'ResourceData'):
+        self.tick = tick
+        self.data = data
+
+    def __short_args__(self):
+        yield self.data.short_str()
+
+    def __line_args__(self):
+        yield self.data.repr()
+
+
+class DescribeResource(ResourceEvent):
+    __slots__ = 'tick', 'resource',
+    __icon__  = '@->'
+
+
+class CreateResource(ResourceEvent):
+    __slots__ = 'tick', 'resource',
+    __icon__  = '<-@'
 
 
 ################################################################################
@@ -277,11 +401,31 @@ FrameEnterEvent.OUTGOING = OutgoingFrameEnter
 FrameExitEvent.INCOMING = IncomingFrameExit
 FrameExitEvent.OUTGOING = OutgoingFrameExit
 
-ResourceEvent.INCOMING = IncomingResource
-ResourceEvent.OUTGOING = OutgoingResource
+ResourceEvent.INCOMING = CreateResource
+ResourceEvent.OUTGOING = DescribeResource
 
-MessageEvent.INCOMING = IncomingMessage
-MessageEvent.OUTGOING = OutgoingMessage
+ChannelEvent.INCOMING = ChannelReceive
+ChannelEvent.OUTGOING = ChannelSend
 
-EventEvent.INCOMING = IncomingEvent
-EventEvent.OUTGOING = OutgoingEvent
+RPCEvent.INCOMING = IncomingRPC
+RPCEvent.OUTGOING = OutgoingRPC
+
+EventEvent.INCOMING = EventReceive
+EventEvent.OUTGOING = EventSend
+
+################################################################################
+
+ChannelReceive.__icon__        = '<=='
+ChannelSend.__icon__           = '==>'
+
+IncomingFrameEnter.__icon__    = '<··'
+IncomingFrameExit.__icon__     = '<--'
+
+EventSend.__icon__             = '#->'
+EventReceive.__icon__          = '<-#'
+
+OutgoingFrameEnter.__icon__    = '··>'
+OutgoingFrameExit.__icon__     = '-->'
+
+DescribeResource.__icon__      = '@->'
+CreateResource.__icon__        = '<-@'

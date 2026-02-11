@@ -25,8 +25,7 @@ class ContainerMsg(TermPassByValMsg):
 
     type V = ContainerT
 
-    def __len__(self) -> int:
-        return 0
+    def length(self) -> int: ...
 
 
 ################################################################################
@@ -39,11 +38,11 @@ class MappingMsg(ContainerMsg):
     ks: 'Tup[TermMsg]'
     vs: 'Tup[TermMsg]'
 
-    def __len__(self) -> int:
+    def length(self) -> int:
         return len(self.ks)
 
     def __shape__(self) -> str:
-        n = len(self)
+        n = self.length()
         if n > 4:
             return len_shape(n)
         return ','.join(f'{k.shape}:{v.shape}' for k, v in zip(self.ks, self.vs))
@@ -65,7 +64,9 @@ class MappingMsg(ContainerMsg):
 ################################################################################
 
 class DictMsg(MappingMsg, tag='dict'):
+
     CLS: ClassVar[type[dict]] = dict
+
     type V = dict | S.MapProxyT
 
 
@@ -82,7 +83,7 @@ class SequenceMsg(ContainerMsg):
     def __shape__(self) -> str:
         return seq_shape(self.vs)
 
-    def __len__(self) -> int:
+    def length(self) -> int:
         return len(self.vs)
 
     def decode(self, dec: DecoderP) -> SequenceT:
@@ -110,6 +111,7 @@ class ListMsg(SequenceMsg, tag='list'):
 ################################################################################
 
 class SetlikeMsg(SequenceMsg):
+
     @classmethod
     def encode_compound(cls, term: SequenceT, enc: EncoderP) -> 'SequenceMsg':
         vs = list(enc.enc_sequence(term))

@@ -2,6 +2,8 @@
 
 # NOTE: see core.type for more detail
 
+import re
+
 from types import (
     # singletons
     NoneType                  as NoneT,
@@ -37,6 +39,9 @@ from types import (
     MemberDescriptorType      as SlotPropertyC,
 )
 
+from functools import _lru_cache_wrapper as CachingFunctionC
+from _collections import _tuplegetter as TupleSlotPropertyC
+
 __all__ = [
     'NoneT',
     'EllipT',
@@ -59,8 +64,14 @@ __all__ = [
     'BoundDunderMethodC',
     'BoundClassMethodC',
     'BoundMethodOrFuncC',
+    'BoundMethodC',
     'MutablePropertyC',
     'SlotPropertyC',
+    'CachingFunctionC',
+    'TupleSlotPropertyC',
+
+    'PyCallableT',
+    'CCallableT',
 
     'PRIMITIVES',
     'CONTAINERS',
@@ -72,6 +83,17 @@ __all__ = [
     'SYS_TO_NAME',
     'BUILTIN_TO_NAME'
 ]
+
+###############################################################################
+
+# these can be used with isinstance
+
+PyCallableT = FunctionT | BoundMethodT
+
+BoundMethodC = type(re.compile('').finditer)  # inherits from BoundMethodOrFuncC
+
+CCallableT  = UnboundMethodC | UnboundDunderMethodC | BoundDunderMethodC | \
+              BoundClassMethodC | BoundMethodOrFuncC | BoundMethodC
 
 ###############################################################################
 
@@ -89,11 +111,13 @@ C_CALLABLES: tuple[type, ...] = (
     BoundDunderMethodC,
     BoundClassMethodC,
     BoundMethodOrFuncC,
+    BoundMethodC,
+    CachingFunctionC
 )
 
 CALLABLES = PY_CALLABLES + C_CALLABLES
 
-PROPERTIES = MutablePropertyC, SlotPropertyC, property
+PROPERTIES = MutablePropertyC, SlotPropertyC, TupleSlotPropertyC, property
 
 PRIMITIVES = int, bool, float, EllipT, NotImplT, NoneT
 CONTAINERS = list, tuple, set, frozenset, dict
@@ -120,8 +144,10 @@ SYS_TO_NAME: dict[type, str] = {
     BoundDunderMethodC:     'BoundDunderMethodC',
     BoundClassMethodC:      'BoundClassMethodC',
     BoundMethodOrFuncC:     'BoundMethodOrFuncC',
+    BoundMethodC:           'BoundMethodC',
     MutablePropertyC:       'MutablePropertyC',
     SlotPropertyC:          'SlotPropertyC',
+    TupleSlotPropertyC:     'TupleSlotPropertyC',
 }
 
 BUILTIN_TO_NAME: dict[type, str] = {

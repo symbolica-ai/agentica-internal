@@ -11,13 +11,16 @@ __all__ = [
 ################################################################################
 
 class ObjectData(ResourceData):
-    __slots__ = 'cls', 'keys', 'open'
+    __slots__ = 'cls', 'keys', 'open', 'size', 'hash',
 
+    KIND = Kind.Object
     FORBIDDEN_FORM = forbidden_object
 
-    cls:  ClassT
-    keys: strtup
-    open: bool
+    cls:    ClassT
+    keys:   strtup
+    open:   bool
+    size:   int | None
+    hash:   int | None
 
     # implementation attached later
     @classmethod
@@ -47,9 +50,14 @@ def describe_real_object(obj: ObjectT) -> ObjectData:
 
     data.keys = keys
     data.open = flags.OBJECT_OPEN_KEYS
+    data.size = len(obj) if issubclass(cls, SEND_SIZE) else None
+    data.hash = hash(obj) if issubclass(cls, SEND_HASH) else None
 
     return data
 
+
+SEND_SIZE = str, bytes, tuple, frozenset
+SEND_HASH = str, bytes, bool, int, float
 
 ################################################################################
 
@@ -60,23 +68,32 @@ def create_virtual_object(data: ObjectData, handle: ResourceHandle) -> ObjectT:
     handle.open = data.open
     handle.name = f'<{data.cls.__name__!r} object>'
 
+    # if object has an immutable __len__ or __hash__
+    if data.size is not None:
+        handle.size = data.size
+    if data.hash is not None:
+        handle.hash = data.hash
+
     v_cls = data.cls
 
+    has_handle = False
     try:
-        # this will fail if v_cls is not virtual
         cls_get(v_cls, VHDL)
-        # this triggers special behavior in create_virtual_class's `def __new__` stub
-        # to AVOID virtualizing and instead just embed the handle
-        v_obj = v_cls.__new__(v_cls, handle)  # type: ignore
-        return v_obj
-
-    except Exception:
+        has_handle = True
+    except:
         pass
 
-    # if cls_get failed above, we are creating a *system* object, which engages special
-    # code which creates a totally synthetic class on-demand
-    from .virtual_builtin import create_virtual_builtin_object
-    return create_virtual_builtin_object(v_cls, handle)
+    if not has_handle:
+        # if we are being asked to create an instance of a builtin class
+        # like 'list' directly, use code which creates a totally synthetic
+        # class on-demand
+        from .virtual_builtin import create_virtual_builtin_object
+        return create_virtual_builtin_object(v_cls, handle)
+
+    # this triggers special behavior in create_virtual_class's `def __new__` stub
+    # to AVOID virtualizing and instead just embed the handle
+    v_obj = v_cls.__new__(v_cls, ___vhdl___=handle)  # type: ignore
+    return v_obj
 
 
 ################################################################################

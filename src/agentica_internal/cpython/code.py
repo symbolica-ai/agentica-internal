@@ -1,4 +1,5 @@
-from dis import get_instructions
+# fmt: off
+
 from operator import attrgetter
 from types import CodeType
 from typing import NamedTuple, TypeGuard
@@ -9,75 +10,87 @@ __all__ = [
     'code_arg_info',
     'code_arg_names',
     'print_code',
-    'CodeArgInfo',
+    'ArgInfo',
     'FLAGS',
 ]
 
+################################################################################
 
 def is_code(obj: object) -> TypeGuard[CodeType]:
     """Returns True for `CodeType` objects."""
 
     return isinstance(obj, CodeType)
 
+################################################################################
 
 def is_async_code(code: CodeType) -> bool:
     return isinstance(code, CodeType) and bool(code.co_flags & FLAGS.IS_ASYNC)
 
+################################################################################
 
-class CodeArgInfo(NamedTuple):
-    """A 6-tuple describing a CodeType object:
+class ArgInfo(NamedTuple):
+    pos:       list[str]
+    key:       list[str]
+    pos_star:  str | None
+    key_star:  str | None
+    pos_only:  int
 
-    0. `var_names` | tuple of argument names followed by local var names
-    1. `num_pos`   | number of positional-only arguments
-    2. `num_reg`   | number of positional-or-keyword arguments
-    3. `num_key`   | number of keyword-only arguments
-    4. `pos_star`  | True if there is a final *args argument
-    5. `key_star`  | True if there is a final **kwargs argument
+    def anno_keys(self) -> tuple[str, ...]:
+        keys = *self.pos, self.pos_star, *self.key, self.key_star, 'return'
+        return tuple(k for k in keys if k)
 
-    Note: var_names includes locals, arg_count excludes * and ** args
-    """
+    def default_keys(self) -> tuple[str, ...]:
+        return *self.pos, *self.key
 
-    var_names: tuple[str, ...]
-    num_pos: int
-    num_reg: int
-    num_key: int
-    pos_star: bool
-    key_star: bool
+################################################################################
 
-
-codeattrs = attrgetter(
-    'co_varnames', 'co_flags', 'co_argcount', 'co_posonlyargcount', 'co_kwonlyargcount'
-)
-
-
-def code_arg_info(code: CodeType) -> CodeArgInfo:
-    """Given a CodeType object, returns a CodeArgInfo describing it properties."""
+def code_arg_info(code: CodeType, skip: int = 0) -> ArgInfo:
+    """Given a CodeType object, returns a ArgInfo describing it properties."""
 
     assert type(code) is CodeType, f'{code} is not a CodeType object'
 
-    varnames, flags, arg_count, num_pos, num_key = codeattrs(code)
+    strs, flags, pos, pos_only, key_only = codeattrs(code)
+    skip = min(skip, pos)
+    if skip:
+        strs = strs[skip:]
+        pos -= skip
+        pos_only -= skip
+        if pos_only < 0: pos_only = 0
+    key_only = key_only
+    fixed = pos + key_only
 
-    return CodeArgInfo(
-        varnames,
-        num_pos,
-        arg_count - num_pos,
-        num_key,
-        bool(flags & FLAGS.VARARGS),
-        bool(flags & FLAGS.VARKEYWORDS),
+    pos_star = bool(flags & FLAGS.VARARGS)
+    key_star = bool(flags & FLAGS.VARKEYWORDS)
+
+    return ArgInfo(
+        pos=strs[:pos],
+        key=strs[pos:fixed],
+        pos_only=pos_only,
+        pos_star=strs[fixed] if pos_star else None,
+        key_star=strs[fixed + pos_star] if key_star else None,
     )
 
+################################################################################
 
 def code_arg_names(code: CodeType) -> list[str]:
     """Given a CodeType object, returns its argument names."""
 
     assert type(code) is CodeType, f'{code} is not a CodeType object'
 
-    varnames, flags, arg_count, num_pos, num_key = codeattrs(code)
-    pos_star = bool(flags & FLAGS.VARARGS)
-    key_star = bool(flags & FLAGS.VARARGS)
+    strs, flags, non_key, pos_only, key_only = codeattrs(code)
+    has_tup = bool(flags & FLAGS.VARARGS)
+    has_dct = bool(flags & FLAGS.VARKEYWORDS)
+    num_strs = non_key + key_only + has_tup + has_dct
 
-    return varnames[: arg_count + num_key + pos_star + key_star]
+    return strs[:num_strs]
 
+################################################################################
+
+codeattrs = attrgetter(
+    'co_varnames', 'co_flags', 'co_argcount', 'co_posonlyargcount', 'co_kwonlyargcount'
+)
+
+################################################################################
 
 class FLAGS:
     """Flags present on a CodeObject."""
@@ -94,6 +107,7 @@ class FLAGS:
     ASYNC_GENERATOR = 512
     IS_ASYNC = ASYNC_GENERATOR | COROUTINE | ITERABLE_COROUTINE
 
+################################################################################
 
 def print_code(code: CodeType) -> None:
     print(f'''
@@ -112,12 +126,15 @@ CodeType(
                   {fmt_bytecode(code)}>
 )''')
 
+################################################################################
 
 def fmt_names(strs: tuple[str, ...]) -> str:
     return '[' + ', '.join(map(repr, strs)) + ']'
 
+################################################################################
 
 def fmt_bytecode(code: CodeType) -> str:
+    from dis import get_instructions
     strs = []
     for i, ins in enumerate(get_instructions(code)):
         strs.append(f'{ins.opname}({ins.arg})')

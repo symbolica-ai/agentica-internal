@@ -19,17 +19,19 @@ __all__ = [
 
 ################################################################################
 
-class LambdaMsg(TermPassByValMsg):
+class LambdaMsg(TermPassByValMsg, tag='lambda'):
 
-    syntax:  'LambdaSyntax'
+    syntax:  'LambdaSyntaxMsg'
     globals: 'AttributesT'
 
     @staticmethod
     def encode_lambda(enc: EncoderP, func: FunctionType) -> 'LambdaMsg':
-        return function_to_lambda_msg(enc, func)
+        msg = function_to_lambda_msg(enc, func)
+        return msg
 
     def decode(self, dec) -> FunctionType:
-        return lambda_msg_to_function(dec, self)
+        fun = lambda_msg_to_function(dec, self)
+        return fun
 
 
 ################################################################################
@@ -41,7 +43,7 @@ class SyntaxMsg(Msg): ...
 
 ################################################################################
 
-class LambdaSyntax(SyntaxMsg, tag='lambda$'):
+class LambdaSyntaxMsg(SyntaxMsg, tag='lambda$'):
 
     args: list[str]
     body: 'SyntaxMsg'
@@ -52,9 +54,15 @@ class LambdaSyntax(SyntaxMsg, tag='lambda$'):
 class NameSyntax(SyntaxMsg):
     name: str
 
-class LambdaArgSyntax(NameSyntax,   tag='arg$'): ...
-class BuiltinNameSyntax(NameSyntax, tag='sys$'): ...
-class GlobalNameSyntax(NameSyntax,  tag='var$'): ...
+class LambdaArgSyntax(NameSyntax,   tag='arg$'):
+    name: str
+
+class BuiltinNameSyntax(NameSyntax, tag='sys$'):
+    name: str
+
+class GlobalNameSyntax(NameSyntax,  tag='var$'):
+    name: str
+
 
 ################################################################################
 
@@ -64,9 +72,9 @@ type BinOp = Literal[
 ]
 
 class BinarySyntax(SyntaxMsg, tag='binary$'):
-    left:  SyntaxMsg
-    op:    BinOp
-    right: SyntaxMsg
+    left:  'SyntaxMsg'
+    op:     BinOp
+    right: 'SyntaxMsg'
 
 
 ################################################################################
@@ -74,7 +82,7 @@ class BinarySyntax(SyntaxMsg, tag='binary$'):
 type BoolOp = Literal['A', 'USub', 'Not', 'Invert']
 
 class BoolSyntax(SyntaxMsg):
-    args: SyntaxMsgs
+    args: 'SyntaxMsgs'
 
 class AndSyntax(BoolSyntax, tag='and$'): ...
 class OrSyntax(BoolSyntax, tag='or$'): ...
@@ -88,9 +96,9 @@ type CmpOp = Literal[
 
 
 class CompareSyntax(SyntaxMsg, tag='cmp$'):
-    left:  SyntaxMsg
-    op:    CmpOp
-    right: SyntaxMsg
+    left:  'SyntaxMsg'
+    op:     CmpOp
+    right: 'SyntaxMsg'
 
 
 ################################################################################
@@ -98,67 +106,67 @@ class CompareSyntax(SyntaxMsg, tag='cmp$'):
 type UnaryOp = Literal['UAdd', 'USub', 'Not', 'Invert']
 
 class UnarySyntax(SyntaxMsg, tag='unary$'):
-    op:  UnaryOp
-    arg: SyntaxMsg
+    op:   UnaryOp
+    arg: 'SyntaxMsg'
 
 
 ################################################################################
 
 class ConstantSyntax(SyntaxMsg, tag='const$'):
-    const: AtomMsg
+    const: 'AtomMsg'
 
 
 ################################################################################
 
 class CallSyntax(SyntaxMsg, tag='call$'):
-    fn:   SyntaxMsg
-    args: SyntaxMsgs
+    fn:   'SyntaxMsg'
+    args: 'SyntaxMsgs'
 
 
 ################################################################################
 
 class TernaryIfSyntax(SyntaxMsg, tag='if$'):
-    test:  SyntaxMsg
-    tbody: SyntaxMsg
-    fbody: SyntaxMsg
+    test:  'SyntaxMsg'
+    tbody: 'SyntaxMsg'
+    fbody: 'SyntaxMsg'
 
 
 ################################################################################
 
 class AwaitSyntax(SyntaxMsg, tag='await$'):
-    arg: SyntaxMsg
+    arg: 'SyntaxMsg'
 
 
 ################################################################################
 
 class GetAttrSyntax(SyntaxMsg, tag='getattr$'):
-    obj:  SyntaxMsg
+    obj:  'SyntaxMsg'
     attr: str
 
 
 class GetItemSyntax(SyntaxMsg, tag='getitem$'):
-    obj:  SyntaxMsg
-    item: SyntaxMsg
+    obj:  'SyntaxMsg'
+    item: 'SyntaxMsg'
 
 
 ################################################################################
 
 class ContainerSyntax(SyntaxMsg):
-    vals: SyntaxMsgs = []
+    vals: 'SyntaxMsgs' = []
 
 class ListSyntax(ContainerSyntax,  tag='list$'): ...
 class TupleSyntax(ContainerSyntax, tag='tuple$'): ...
 class SetSyntax(ContainerSyntax,   tag='set$'): ...
 
 class DictSyntax(ContainerSyntax, tag='dict$'):
-    keys: SyntaxMsgs = []
-    vals: SyntaxMsgs = []
+    keys: 'SyntaxMsgs' = []
+    vals: 'SyntaxMsgs' = []
 
 
 ################################################################################
 
 class FmtSyntax(SyntaxMsg, tag='fmt$'):
-    value: SyntaxMsg
+    value: 'SyntaxMsg'
     conversion: int
 
 class FStringSyntax(SyntaxMsg, tag='fstr$'):
@@ -170,12 +178,12 @@ class FStringSyntax(SyntaxMsg, tag='fstr$'):
 # TODO: hook these up
 
 class ComprehensionIteratorSyntax(SyntaxMsg, tag='comp_iter$'):
-    target: SyntaxMsg
-    iter:   SyntaxMsg
-    tests:  SyntaxMsgs
+    target: 'SyntaxMsg'
+    iter:   'SyntaxMsg'
+    tests:  'SyntaxMsgs'
 
 class ComprehensionSyntax(SyntaxMsg):
-    elem:  SyntaxMsg
+    elem: 'SyntaxMsg'
     iters: list[ComprehensionIteratorSyntax]
 
 class ListComprehensionSyntax(ComprehensionSyntax, tag='list_comp$'): ...
@@ -338,11 +346,11 @@ def encode_lambda_msg(encoder: EncoderP, root: ast.Lambda, known_globals: dict[s
             case _:
                 enc_node_error("unsupported ast.arguments", args)
 
-    def enc_lambda(node: ast.Lambda) -> LambdaSyntax:
+    def enc_lambda(node: ast.Lambda) -> LambdaSyntaxMsg:
         args = enc_pos_args(node.args)
         lambda_args.update(args)
         body = enc_syntax(node.body)
-        return LambdaSyntax(args, body)
+        return LambdaSyntaxMsg(args, body)
 
     def enc_name(name: str) -> SyntaxMsg:
         if name in lambda_args:
@@ -379,7 +387,7 @@ def decode_lambda_msg(decoder: DecoderP, root: LambdaMsg) -> tuple[ast.Lambda, A
             case NameSyntax(name):
                 return ast.Name(name, ast.Load())
 
-            case LambdaSyntax():
+            case LambdaSyntaxMsg():
                 return dec_lambda(msg)
 
             case ConstantSyntax(const):
@@ -411,7 +419,7 @@ def decode_lambda_msg(decoder: DecoderP, root: LambdaMsg) -> tuple[ast.Lambda, A
             case GetItemSyntax(value, part):
                 return ast.Subscript(dec(value), dec(part), ast.Load())
 
-            case GetAttrSyntax(value, attr, ast.Load()):
+            case GetAttrSyntax(value, attr):
                 return ast.Attribute(dec(value), attr, ast.Load())
 
             case TupleSyntax(vals):
@@ -444,7 +452,7 @@ def decode_lambda_msg(decoder: DecoderP, root: LambdaMsg) -> tuple[ast.Lambda, A
         args = [ast.arg(s) for s in strs]
         return ast.arguments([], args, None, [], [], None, [])
 
-    def dec_lambda(msg: LambdaSyntax) -> ast.Lambda:
+    def dec_lambda(msg: LambdaSyntaxMsg) -> ast.Lambda:
         args = dec_pos_args(msg.args)
         body = dec_syntax(msg.body)
         if not isinstance(body, ast.expr):

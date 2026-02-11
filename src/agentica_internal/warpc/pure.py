@@ -33,8 +33,8 @@ class PureCodec(CodecP):
 
     # --------------------------------------------------------------------------
 
-    def enc_exception(self, exc: BaseException) -> ExceptionMsg:
-        return ExceptionMsg.encode_compound(exc, self)
+    def enc_exception(self, exc: BaseException) -> 'ExceptionMsg':
+        return ExceptionMsg.encode_exception(exc, self)
 
     def enc_value(self, val: ValueT) -> TermPassByValMsg:
         msg = self._enc_val(val)
@@ -55,7 +55,7 @@ class PureCodec(CodecP):
             return fn(val, self)
 
         if isinstance(val, BaseException):
-            return ExceptionMsg.encode_compound(val, self)
+            return ExceptionMsg.encode_exception(val, self)
 
         if isinstance(val, Enum):
             return self.enc_any(val._value_)  # type: ignore
@@ -105,6 +105,18 @@ class PureCodec(CodecP):
                 pass
         return res
 
+    def enc_properties(self, rec: PropertiesT) -> PropertiesMsg:
+        if not rec:
+            return {}
+        res = {}
+        for k, v in rec.items():
+            try:
+                v_msg = self.enc_resource(v)
+                res[k] = v_msg
+            except E.WarpEncodingError:
+                pass
+        return res
+
     def enc_methods(self, rec: MethodsT, /) -> 'MethodsMsg':
         enc_fun = self.enc_function
         dct = {}
@@ -137,28 +149,28 @@ class PureCodec(CodecP):
 
     # --------------------------------------------------------------------------
 
-    def dec_object(self, obj: ResourceMsg) -> ObjectT:
+    def dec_object(self, obj: ObjectMsg) -> ObjectT:
         return decode_system_resource(obj)
 
-    def dec_class(self, cls: ResourceMsg) -> ClassT:
+    def dec_class(self, cls: ClassMsg) -> ClassT:
         cls = decode_system_resource(cls)
         return cls if is_class_t(cls) else forbidden_class
 
-    def dec_type(self, typ: TermMsg) -> TypeT:
+    def dec_type(self, typ: TypeMsg) -> TypeT:
         try:
             return self.dec_any(typ)
         except E.WarpDecodingError:
             return Any
 
-    def dec_function(self, fun: ResourceMsg) -> FunctionT:
+    def dec_function(self, fun: FunctionMsg) -> FunctionT:
         fun = self.dec_resource(fun)
         return fun if is_function_t(fun) else forbidden_function
 
-    def dec_module(self, mod: ResourceMsg) -> ModuleT:
+    def dec_module(self, mod: ModuleMsg) -> ModuleT:
         fun = self.dec_resource(mod)
         return fun if is_module_t(fun) else forbidden_module
 
-    def dec_future(self, mod: ResourceMsg) -> FutureT:
+    def dec_future(self, mod: FutureMsg) -> FutureT:
         fun = self.dec_resource(mod)
         return fun if is_future_t(fun) else forbidden_object
 
@@ -193,6 +205,12 @@ class PureCodec(CodecP):
         # TODO: use map_dict
         return dict(zip(rec.keys(), map(self.dec_type, rec.values())))
 
+    def dec_properties(self, rec: PropertiesMsg) -> PropertiesT:
+        if type(rec) is not dict:
+            return {}
+        # TODO: use map_dict
+        return dict(zip(rec.keys(), map(self.dec_resource, rec.values())))
+
     def dec_methods(self, rec: MethodsMsg) -> MethodsT:
         if type(rec) is not dict:
             return {}
@@ -222,6 +240,12 @@ class PureCodec(CodecP):
 
     def enc_context_defs(self) -> 'Tup[DefinitionMsg]':
         return ()
+
+    def enc_before(self, lrid: LocalRID, /) -> GlobalRID | None:
+        return None
+
+    def dec_before(self, grid: GlobalRID, /) -> LocalRID | None:
+        return None
 
     def __enter__(self) -> None: ...
     def __exit__(self, exc_type, exc_val, exc_tb) -> None: ...

@@ -1,0 +1,1 @@
+NAME = 'nested.b'

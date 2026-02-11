@@ -4,9 +4,15 @@
 
 # NOTE: this is to ensure that componentize will acquire these modules
 
+import site
+import importlib
+
+import agentica_internal.core.asserts
 import agentica_internal.core.color
 import agentica_internal.core.debug
+import agentica_internal.core.eval
 import agentica_internal.core.fmt
+import agentica_internal.core.filters
 import agentica_internal.core.fns
 import agentica_internal.core.futures
 import agentica_internal.core.hashing
@@ -26,24 +32,26 @@ import agentica_internal.cpython.alias
 import agentica_internal.cpython.classes.anno
 import agentica_internal.cpython.classes.sys
 import agentica_internal.cpython.code
-import agentica_internal.cpython.iters
+import agentica_internal.cpython.class_info
+import agentica_internal.cpython.exceptions
 import agentica_internal.cpython.frame
 import agentica_internal.cpython.function
 import agentica_internal.cpython.ids
-import agentica_internal.cpython.inspect
+import agentica_internal.cpython.inspection
+import agentica_internal.cpython.iters
 import agentica_internal.cpython.module
+import agentica_internal.cpython.overloads
+import agentica_internal.cpython.properties
 import agentica_internal.cpython.slots
 
-# ensure the shed modules are known about, they will be
-# cleared from sys.modules when the shed actually loads them though!
-import agentica_internal.cpython.shed
-import agentica_internal.cpython.shed.load
-import agentica_internal.cpython.shed._math
-import agentica_internal.cpython.shed._builtins
+import agentica_internal.warpc.data.all
+import agentica_internal.warpc.data.signature_compile
+import agentica_internal.warpc.data.signature_utils
 
 import agentica_internal.warpc.request.all
 import agentica_internal.warpc.resource.all
 import agentica_internal.warpc.resource.virtual_builtin
+import agentica_internal.warpc.resource.vbuiltins
 
 import msgspec
 import rich

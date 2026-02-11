@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any, TypeAliasType, ForwardRef, Union
 
 import msgspec
+from .signature_msg import SignatureMsg
 from .resource_def import DefinitionMsg
 
 from ...core.debug import avoid_file
@@ -12,6 +13,7 @@ from ...core.anno import union_iter
 from ...core.print import eprint
 from ...core.log import LogFlag
 
+from ..data.identifier import Identifier
 from ..alias import Tup, Rec, MethodKind
 from .. import flags
 
@@ -20,9 +22,10 @@ from . import (
     resource_data, resource_def,
     rpc, rpc_framed,
     rpc_request, rpc_request_repl, rpc_request_resource,
-    rpc_result, rpc_sideband,
+    rpc_sideband,
     term, term_atom, term_container, term_exception,
-    term_resource, term_special
+    term_resource, term_result, term_special, term_wrapper,
+    msg_aliases
 )
 
 from .__json import fmt_json
@@ -30,9 +33,9 @@ from .__msgpack import pprint_msgpack
 
 from .bad import NO_MSG, Msg
 from .term import TermMsg, SIMPLE_ENCODERS, COMPLEX_ENCODERS, CONSTANT_ENCODERS
-from .term_resource import ResourceMsg
+from .term_resource import ResourceMsg, UserResourceMsg
 from .resource_data import FunctionDataMsg
-from .term_exception import ExceptionMsg
+from .term_exception import SystemExceptionMsg, ExceptionMsg
 from .term_lambda import SyntaxMsg
 
 __all__ = [
@@ -49,13 +52,14 @@ avoid_file(__file__)
 ################################################################################
 
 MSG_CLS_MODULES: list[ModuleType] = [
+    msg_aliases,
     base, bad,
     resource_data, resource_def,
     rpc, rpc_framed,
     rpc_request, rpc_request_repl, rpc_request_resource,
-    rpc_result, rpc_sideband,
+    rpc_sideband,
     term, term_atom, term_container, term_exception,
-    term_resource, term_special
+    term_resource, term_result, term_special, term_wrapper
 ]
 
 def _import_msg_classes():
@@ -178,6 +182,7 @@ def _attach_decoders(cls: type[Msg]):
         msgpack_decoder = msgspec.msgpack.Decoder(union_t).decode
     except Exception as e:
         e.add_note(f'error while attaching decoders to {cls_name}:')
+        e.add_note(f'UNION = {union_t}')
         f_annos = '\n'.join(f"\t{k:<20}: {v} {type(v)}" for k, v in cls.__annotations__.items())
         e.add_note(f_annos)
         raise
@@ -228,7 +233,22 @@ def print_msgspec_error(cls_name: str, msgpack_data: bytes, exc: Exception) -> N
 
 def _dispatch_on_sys_exc_types():
     from ..system import SYS_EXCEPTIONS
-    upd_comp(dict.fromkeys(SYS_EXCEPTIONS, ExceptionMsg.encode_compound))
+    # for cls in SYS_EXCEPTIONS:
+    #     try:
+    #         exc = cls()
+    #         try:
+    #             s = exc.__getstate__()
+    #             if s is not None:
+    #                 print()
+    #                 print("Exception state", cls, s)
+    #         except Exception as e:
+    #             print()
+    #             print("Cannot got exception state", cls, e)
+    #     except Exception as e:
+    #         print()
+    #         print(get_signature(cls))
+    #         print("Cannot create", cls, e)
+    upd_comp(dict.fromkeys(SYS_EXCEPTIONS, SystemExceptionMsg.encode_compound))
 
 
 ################################################################################
@@ -255,30 +275,46 @@ def finalize_message_classes():
     MSG_CLS_LIST.reverse()
     _import_msg_classes()
 
+    MSG_CLS_LIST.remove(SignatureMsg)
+    MSG_CLS_LIST.insert(0, SignatureMsg)
+
+    excp_msg_union = ExceptionMsg.UNION                        # type: ignore
     synt_msg_union = SyntaxMsg.UNION                           # type: ignore
     term_msg_union = TermMsg.UNION                             # type: ignore
     rsrc_msg_union = ResourceMsg.UNION                         # type: ignore
     term_tup_t = tuple[term_msg_union, ...]                    # type: ignore
     term_rec_t = dict[str, term_msg_union]                     # type: ignore
-    rsrc_tup_t = tuple[rsrc_msg_union, ...]                    # type: ignore
     rsrc_rec_t = dict[str, rsrc_msg_union]                     # type: ignore
     synt_lst_t = list[synt_msg_union]                          # type: ignore
     method_pair_t = tuple[MethodKind, rsrc_msg_union]          # type: ignore
     methods_msg_t = dict[str, method_pair_t | rsrc_msg_union]  # type: ignore
     fn_data_tup_t: Any = tuple[FunctionDataMsg, ...]           # type: ignore
 
+    EQUIVS['ExceptionMsg']       = excp_msg_union
     EQUIVS['TermMsg']            = term_msg_union
     EQUIVS['SyntaxMsg']          = synt_msg_union
     EQUIVS['ResourceMsg']        = rsrc_msg_union
+    EQUIVS['LocalResourceMsg']   = rsrc_msg_union
+
     EQUIVS['ArgsMsg']            = term_tup_t
     EQUIVS['KwargsMsg']          = term_rec_t
-    EQUIVS['AnnotationsMsg']     = term_rec_t
     EQUIVS['AttributesMsg']      = term_rec_t
-    EQUIVS['ClassesTupleMsg']    = rsrc_tup_t
-    EQUIVS['OverloadsMsg']       = fn_data_tup_t
-    EQUIVS['ResourcesRecordMsg'] = rsrc_rec_t
     EQUIVS['SyntaxMsgs']         = synt_lst_t
     EQUIVS['MethodsMsg']         = methods_msg_t
+
+    EQUIVS['TypeMsg']            = term_msg_union
+    EQUIVS['ObjectMsg']          = rsrc_msg_union
+    EQUIVS['ClassMsg']           = rsrc_msg_union
+    EQUIVS['ModuleMsg']          = rsrc_msg_union
+    EQUIVS['FutureMsg']          = rsrc_msg_union
+    EQUIVS['FunctionMsg']        = rsrc_msg_union
+    EQUIVS['PropertyMsg']        = rsrc_msg_union
+    EQUIVS['ExceptionRefMsg']    = UserResourceMsg
+
+    EQUIVS['PropertiesMsg']      = rsrc_rec_t
+    EQUIVS['AnnotationsMsg']     = term_rec_t
+    EQUIVS['AttributesT']        = term_rec_t
+    EQUIVS['SrcLocationMsg']     = Identifier | None
 
     _scan_msg_classes(_resolve_forward_refs)
     _scan_msg_classes(_attach_decoders)

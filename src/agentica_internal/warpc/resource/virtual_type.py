@@ -26,6 +26,7 @@ when decoded, and involve no virtual resource requests.
 class TypeData(ResourceData):
     __slots__ = ()
 
+    KIND = Kind.Type
     FORBIDDEN_FORM = Any
 
     @classmethod
@@ -150,6 +151,8 @@ class GenericAliasData(TypeData):
         try:
             if type(origin) is TForm and len(args) == 1:
                 ty = origin[args[0]]  # e.g. ClassVar[int]
+            elif isinstance(origin, type):
+                ty = TGeneric(origin, args)
             else:
                 ty = origin[args]  # e.g. Tuple[int, str]
         except Exception:

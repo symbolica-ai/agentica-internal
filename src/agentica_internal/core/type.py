@@ -16,9 +16,10 @@ is the name as reported by `types`, and the third
 | UnboundMethodC       | MethodDescriptorType      | `bytes.hex`                |
 | UnboundDunderMethodC | WrapperDescriptorType     | `list.__init__`            |
 | BoundDunderMethodC   | MethodWrapperType         | `[].__len__`               |
-| BoundClassMethodC    | ClassMethodDescriptorType | `bytes.fromhex`            |
+| BoundClassMethodC    | ClassMethodDescriptorType | `bytes.__dict__['fromhex']' |
 | BoundMethodOrFuncC   | BuiltinFunctionType       | `len`                      |
 | BoundMethodOrFuncC   | BuiltinMethodType         | `[].append`                |
+| BoundMethodC         |                           | `re.compile('').finditer`  |
 | MutablePropertyC     | GetSetDescriptorType      | `FrameType.f_locals`       |
 | SlotPropertyC        | MemberDescriptorType      | `timedelta.days`           |
 
@@ -29,25 +30,27 @@ e.g. `len.__self__ is builtins`, or a genuine object, e.g.
 
 Here is what these various instances print as, if you want to tell at a glance
 what you are dealing with from the print form of such an instance:
-| BoundMethodT         | `<bound method 'NAME' of SELF>            |
-| UnboundMethodC       | `<method 'NAME' of 'CLASS' objects>       |
-| UnboundDunderMethodC | `<slot wrapper 'NAME' of 'CLASS' objects> |
-| BoundDunderMethodC   | `<method-wrapper 'NAME' of SELF>          |
-| BoundClassMethodC    | `<method 'NAME' of 'CLASS' objects>       |
-| BoundMethodOrFuncC   | `<built-in function 'NAME'>`              |
-|                      | `<built-in method 'NAME' of SELF>`        |
-| MutablePropertyC     | `<attribute 'NAME' of 'CLASS' objects>    |
-| SlotPropertyC        | `<slot 'NAME' of 'CLASS' objects>         |
+| BoundMethodT         | `<bound method 'NAME' of SELF>`            |
+| BoundMethodC         | `builtin-in method 'NAME' of SELF>`        |
+| UnboundMethodC       | `<method 'NAME' of 'CLASS' objects>`       |
+| UnboundDunderMethodC | `<slot wrapper 'NAME' of 'CLASS' objects>` |
+| BoundDunderMethodC   | `<method-wrapper 'NAME' of SELF>`          |
+| BoundClassMethodC    | `<method 'NAME' of 'CLASS' objects>`       |
+| BoundMethodOrFuncC   | `<built-in function 'NAME'>`               |
+|                      | `<built-in method 'NAME' of SELF>`         |
+| MutablePropertyC     | `<attribute 'NAME' of 'CLASS' objects>`    |
+| SlotPropertyC        | `<slot 'NAME' of 'CLASS' objects>`         |
 
 Here is what the classes themselves print as:
-| BoundMethodT         | `<class 'method'>'                     |
-| UnboundMethodC       | `<class 'method_descriptor'>'          |
-| UnboundDunderMethodC | `<class 'wrapper_descriptor'>'         |
-| BoundDunderMethodC   | `<class 'method-wrapper'>'             |
-| BoundClassMethodC    | `<class 'classmethod_descriptor'>'     |
-| BoundMethodOrFuncC   | `<class 'builtin_function_or_method'>' |
-| MutablePropertyC     | `<class 'getset_descriptor'>'          |
-| SlotPropertyC        | `<class 'member_descriptor'>'          |
+| BoundMethodT         | `<class 'method'>`                     |
+| BoundMethodC         | `<class 'builtin_method'>`             |
+| UnboundMethodC       | `<class 'method_descriptor'>`          |
+| UnboundDunderMethodC | `<class 'wrapper_descriptor'>`         |
+| BoundDunderMethodC   | `<class 'method-wrapper'>`             |
+| BoundClassMethodC    | `<class 'classmethod_descriptor'>`     |
+| BoundMethodOrFuncC   | `<class 'builtin_function_or_method'>` |
+| MutablePropertyC     | `<class 'getset_descriptor'>`          |
+| SlotPropertyC        | `<class 'member_descriptor'>`          |
 
 # `typing`, `collections.abc` module
 

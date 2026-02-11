@@ -3,10 +3,10 @@
 import itertools as I
 import sys
 import warnings
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from math import comb
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Union
 
 __all__ = [
     'DictKeysType',
@@ -15,25 +15,30 @@ __all__ = [
     'DictKeysIterType',
     'DictValuesIterType',
     'DictItemsIterType',
+    'SeqIterType',
     'ListIterType',
     'TupleIterType',
     'SetIterType',
     'FrozenSetIterType',
     'ReversedListIterType',
-    'ReversedIterType',
+    'ReversedSeqIterType',
     'StrIterType',
     'BytesIterType',
     'ByteArrayIterType',
-    'CallableIterType',
-    'DICT_ITER_TYPES',
-    'SEQ_ITER_TYPES',
+    'CallIterType',
+    'BuiltinIteratorT',
     'STR_ITER_TYPES',
+    'SEQ_ITER_TYPES',
+    'REV_ITER_TYPES',
+    'SET_ITER_TYPES',
+    'DICT_ITER_TYPES',
     'MISC_ITER_TYPES',
     'ITER_TYPES',
     'DICT_VIEW_TYPES',
     'PROXY_VIEW_TYPES',
     'VIEW_TYPES',
     'iter_len',
+    'iter_len_hint',
     'UNBOUNDED'
 ]
 
@@ -42,7 +47,7 @@ __all__ = [
 
 class _SequenceClass:
     def __getitem__(self, _): return 0
-    def __len__(self):        return 0
+    def __len__(self):        return 3
 
 _sequence_obj        = _SequenceClass()
 
@@ -68,124 +73,178 @@ del _frame_locals_proxy
 
 ####################################################################################################
 
-DictKeysType         = type(_dict_keys)
-DictValuesType       = type(_dict_values)
-DictItemsType        = type(_dict_items)
-
-DictKeysIterType     = type(iter(_dict_keys))
-DictValuesIterType   = type(iter(_dict_values))
-DictItemsIterType    = type(iter(_dict_items))
-
-SequenceIterType     = type(iter(_sequence_obj))
-
-ListIterType         = type(iter(list()))
-TupleIterType        = type(iter(tuple()))
-SetIterType          = type(iter(set()))
-FrozenSetIterType    = type(iter(frozenset()))
-# SetIterType is FrozenSetIterType
-
-StrIterType          = type(iter(str()))
-BytesIterType        = type(iter(bytes()))
-ByteArrayIterType    = type(iter(bytearray()))
-
-CallableIterType     = type(iter(int, 0))
-ReversedIterType     = reversed
-ReversedListIterType = type(iter(reversed(list())))
-RangeIteratorType    = type(iter(range(1)))
-
-del _dict
-del _dict_keys
-del _dict_values
-del _dict_items
-del _sequence_obj
-del _SequenceClass
-
 type types = tuple[type, ...]
 
-DICT_ITER_TYPES: types = DictKeysIterType, DictValuesIterType, DictItemsIterType
-SEQ_ITER_TYPES:  types = ListIterType, TupleIterType, SetIterType, FrozenSetIterType, SequenceIterType
-STR_ITER_TYPES:  types = StrIterType, BytesIterType, ByteArrayIterType
-MISC_ITER_TYPES: types = CallableIterType, ReversedListIterType, ReversedIterType, RangeIteratorType
-ITER_TYPES:      types = DICT_ITER_TYPES + SEQ_ITER_TYPES + STR_ITER_TYPES + MISC_ITER_TYPES
+StrIterType           = type(iter(str()))
+BytesIterType         = type(iter(bytes()))
+ByteArrayIterType     = type(iter(bytearray()))
+STR_ITER_TYPES: types = StrIterType, BytesIterType, ByteArrayIterType
 
-DICT_VIEW_TYPES:  types = DictKeysType, DictValuesType, DictItemsType
-PROXY_VIEW_TYPES: types = MappingProxyType, FrameLocalsProxyType
-VIEW_TYPES:       types = DICT_VIEW_TYPES + PROXY_VIEW_TYPES
+TupleIterType          = type(iter(tuple()))
+ListIterType           = type(iter(list()))
+SeqIterType            = type(iter(_sequence_obj))
+ReversedSeqIterType    = reversed
+ReversedListIterType   = type(iter(reversed(list())))
+SEQ_ITER_TYPES: types  = TupleIterType, ListIterType, SeqIterType, ReversedListIterType, ReversedSeqIterType
+REV_ITER_TYPES: types  = ReversedSeqIterType, ReversedListIterType
+
+SetIterType            = type(iter(set()))
+FrozenSetIterType      = type(iter(frozenset()))
+SET_ITER_TYPES: types  = SetIterType, FrozenSetIterType
+
+DictKeysType           = type(_dict_keys)
+DictValuesType         = type(_dict_values)
+DictItemsType          = type(_dict_items)
+DictKeysIterType       = type(iter(_dict_keys))
+DictValuesIterType     = type(iter(_dict_values))
+DictItemsIterType      = type(iter(_dict_items))
+DICT_ITER_TYPES: types = DictKeysIterType, DictValuesIterType, DictItemsIterType
+
+# SetIterType is FrozenSetIterType
+CallIterType           = type(iter(int, 0))
+RangeIterType          = type(iter(range(1)))
+MISC_ITER_TYPES: types = CallIterType, RangeIterType
+
+SELF_ITER_TYPES:  types = zip, enumerate, map
+
+ITER_TYPES: types      = STR_ITER_TYPES + SEQ_ITER_TYPES + SET_ITER_TYPES + DICT_ITER_TYPES + \
+                         MISC_ITER_TYPES + SELF_ITER_TYPES
+
+BuiltinIteratorT = Union[*ITER_TYPES]
 
 ####################################################################################################
 
-type LenFn = Callable[[Any], int]
+DICT_VIEW_TYPES:   types = DictKeysType, DictValuesType, DictItemsType
+PROXY_VIEW_TYPES:  types = MappingProxyType, FrameLocalsProxyType
+VIEW_TYPES:        types = DICT_VIEW_TYPES + PROXY_VIEW_TYPES
+
+####################################################################################################
+
+UNBOUNDED = 2 << 24 - 1
 
 def iter_len(obj: Any) -> int:
-    if type(obj) in LEN_TYPES:
+
+    cls = type(obj)
+
+    if cls in EXACT_LEN_TYPES:
         return len(obj)
-    return _len(obj)
+
+    if cls in EXACT_HINT_ITER_TYPES:
+        return obj.__length_hint__()
+
+    if len_fn := custom_len_fn(cls):
+        return len_fn(obj)
+
+    return UNBOUNDED
+
+####################################################################################################
+
+def iter_len_hint(it: Any) -> int | None:
+    cls = type(it)
+
+    if cls in EXACT_LEN_TYPES:
+        return len(it)
+
+    if cls in EXACT_HINT_ITER_TYPES:
+        return it.__length_hint__()
+
+    if len_fn := custom_len_fn(cls):
+        return len_fn(it)
+
+    return _len_hint(it)
+
+
+EXACT_LEN_TYPES:       types = list, set, dict, tuple, frozenset, str, bytes, bytearray, range, *VIEW_TYPES
+INF_LEN_ITER_TYPES:    types = I.cycle,
+EXACT_HINT_ITER_TYPES: types = ListIterType, TupleIterType, StrIterType, BytesIterType, \
+    ByteArrayIterType, ReversedSeqIterType, ReversedListIterType, RangeIterType
 
 ####################################################################################################
 
 def _len(obj: Any) -> int:
+
     cls = type(obj)
-    if cls in LEN_TYPES:
+
+    if cls in EXACT_LEN_TYPES:
         return len(obj)  # type: ignore
-    if cls in HINT_TYPES:
+
+    if cls in INF_LEN_ITER_TYPES:
+        return UNBOUNDED
+
+    if cls in EXACT_HINT_ITER_TYPES:
         # these are *exact* hints
         return obj.__length_hint__()
-    try:
-        len_fn = cls_len_fn(cls, len)
-        n = len_fn(obj)  # type: ignore
-        if type(n) is int and n >= 0:
-            return n
-    except:
-        pass
+
+    if len_fn := custom_len_fn(cls):
+        return len_fn(obj)
+
+    return UNBOUNDED
+
+####################################################################################################
+
+def _len_hint(obj: object) -> int:
+    hint_fn = getattr(obj, '__length_hint__', None)
+    if callable(hint_fn):
+        try:
+            hint = hint_fn()
+            if type(hint) is int and hint >= 0:
+                return hint
+        except:
+            ...
+    return UNBOUNDED
+
+def _len_seq(obj: SeqIterType) -> int:
+    match obj.__reduce__():
+        case (_, (it, int() as pos)):
+            n = _len(it)
+            if n is not UNBOUNDED:
+                return n - pos
     return UNBOUNDED
 
 def _len_map(obj: map) -> int:
     _, args = obj.__reduce__()
     return min(map(_len, args[1:]))
 
-def _len_hint(obj: object) -> int:
-    n = obj.__length_hint__()
-    if type(n) is int and n >= 0:
-        return n
+def _len_zip(obj: zip) -> int:
+    match obj.__reduce__():
+        case (_, tuple() as its):
+            return min(map(_len, its))
     return UNBOUNDED
 
-def _len_unbounded(_) -> int:
+def _len_enum(obj: enumerate) -> int:
+    match obj.__reduce__():
+        case (_, (it, _)):
+            return _len(it)
     return UNBOUNDED
 
-def _len_inner(i: int) -> LenFn:
-    def fn(obj):
-        _, args = obj.__reduce__()
-        return _len(args[i])
-    return fn
+def _len_rev(obj: ReversedListIterType) -> int:
+    match obj.__reduce__():
+        case (_, (it, *_)):
+            return _len(it)
+    return UNBOUNDED
 
-def _len_reduce(i: int, reduce: Callable[[Iterable[int]], int]) -> LenFn:
-    def fn(obj):
-        state = obj.__reduce__()
-        args = state[i]
-        assert type(args) is tuple
-        return reduce(map(_len, args))
-    return fn
+CUSTOM_LEN_FNS: dict[type, Callable[[Any], int]] = {
+    map:                  _len_map,
+    enumerate:            _len_enum,
+    zip:                  _len_zip,
+    SeqIterType:          _len_hint,
+    SetIterType:          _len_hint,
+    DictItemsType:        _len_hint,
+    DictKeysIterType:     _len_hint,
+    DictValuesIterType:   _len_hint,
+    DictItemsIterType:    _len_hint,
+    ReversedSeqIterType:  _len_rev,
+    ReversedListIterType: _len_rev,
+    I.repeat:             _len_hint,
+}
+custom_len_fn = CUSTOM_LEN_FNS.get
 
 ####################################################################################################
 
-UNBOUNDED = 2 << 24 - 1
-
-LEN_TYPES: set[type] = {
-    list, set, dict, tuple, frozenset, str, bytes, bytearray,
-    range, *VIEW_TYPES
-}
-
-# these hints are *accurate*
-HINT_TYPES: set[type] = set(ITER_TYPES)
-
-LEN_FNS: dict[type, Callable[[Any], int]] = {
-    map:                  _len_map,
-    zip:                  _len_reduce(1, min),
-    reversed:             _len_inner(0),
-    ReversedListIterType: _len_inner(0)
-}
-
 if sys.version_info[1] < 14:
+    # reduce support in itertools was removed in version 14
+
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
 
     def _len_islice(obj: I.islice) -> int:
         _, args, _ = obj.__reduce__()
@@ -198,21 +257,28 @@ if sys.version_info[1] < 14:
         _, (it, r) = obj.__reduce__()
         return comb(_len(it), r)
 
-    def _len_offset(off: int) -> LenFn:
+    def _len_offset(off: int):
         def fn(obj):
             state = obj.__reduce__()
-            print(state)
             return _len(state[1][0]) + off
         return fn
 
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    LEN_FNS |= {
-        I.count:              _len_unbounded,
-        I.cycle:              _len_unbounded,
+    def _len_starmap(obj) -> int:
+        match obj.__reduce__():
+            case (_, (_, it, *_)):
+                return _len(it)
+        return UNBOUNDED
+
+    def _len_ziplongest(obj: zip) -> int:
+        match obj.__reduce__():
+            case (_, tuple() as its, _):
+                return max(map(_len, its))
+        return UNBOUNDED
+
+    CUSTOM_LEN_FNS |= {
         I.islice:             _len_islice,
-        I.repeat:             _len_hint,
-        I.starmap:            _len_inner(1),
-        I.zip_longest:        _len_reduce(1, max),
+        I.starmap:            _len_starmap,
+        I.zip_longest:        _len_ziplongest,
         # not implemented correctly yet:
         # I.pairwise:         _len_offset(-1),
         # I.accumulate:       _len_offset(1),
@@ -221,4 +287,49 @@ if sys.version_info[1] < 14:
         # I.chain:            _len_reduce(2, sum)
     }
 
-cls_len_fn = LEN_FNS.get
+####################################################################################################
+
+# def _print_info():
+#
+#     # print some info about concrete examples
+#
+#     def mk(o):
+#         it = iter(o)
+#         # next(it)
+#         return it
+#
+#     vals = 1, 2, 3
+#
+#     iters = {
+#         'enum':                 mk(enumerate(vals)),
+#         'zip':                  mk(zip(vals, [1,2])),
+#         'map':                  mk(map(str, vals)),
+#         'SeqIterType':          mk(_sequence_obj),
+#         'ListIterType':         mk(list(vals)),
+#         'TupleIterType':        mk(tuple(vals)),
+#         'StrIterType':          mk(str('abc')),
+#         'BytesIterType':        mk(bytes(b'abc')),
+#         'ByteArrayIterType':    mk(bytearray(b'abc')),
+#         'CallableIterType':     mk(iter(int, 9)),
+#         'ReversedIterType':     mk(reversed(vals)),
+#         'ReversedListIterType': mk(reversed(list(vals))),
+#         'RangeIteratorType':    mk(range(5)),
+#     }
+#
+#     for k, v in iters.items():
+#         try:
+#             hint1 = iter_len_hint(v)
+#             next(v); hint2 = iter_len_hint(v)
+#             print(k.ljust(15), hint1, hint2, v.__reduce__())
+#         except IOError: ...
+#
+# _print_info()
+
+####################################################################################################
+
+del _dict
+del _dict_keys
+del _dict_values
+del _dict_items
+del _sequence_obj
+del _SequenceClass

@@ -1,4 +1,5 @@
 # fmt: off
+import asyncio
 
 from collections.abc import Callable, Iterable
 from functools import wraps
@@ -13,7 +14,7 @@ from ...core.color import RED, BLUE, GREEN, YELLOW, BOLD, ITALIC, UNDER, DIM
 from ...core.fns import glob_match_
 from ...core.fmt import idsafe_str, f_idsafe
 
-from ...cpython.inspect import callable_location
+from ...cpython.inspection import callable_location
 
 from .tst_storage import FileTemplate
 from .tst_ids import ObjectNamer
@@ -93,7 +94,15 @@ def run_object_tests[X](
 
     assert callable(test_fn), f"test_fn={type(test_fn)!r} is not callable"
 
-    run_test_loop(test_fn, arguments, include_name=include_name, **opts)
+    if asyncio.iscoroutinefunction(test_fn):
+        def fn(*args, **kwargs):
+            __tracebackhide__ = True  # for pytest
+            return asyncio.run(test_fn(*args, **kwargs))
+        fn.__wrapped__ = test_fn
+    else:
+        fn = test_fn
+
+    run_test_loop(fn, arguments, include_name=include_name, **opts)
 
 
 def run_object_to_file_tests[X, Y](
@@ -206,7 +215,7 @@ def run_test_loop(
     to_tag = {'P': 'passed', 'F': 'failed', 'C': 'created', 'E': 'errors'}
     to_col_tag = {k: to_col[k](to_tag[k], 8) for k in ('P', 'F', 'C', 'E')}
 
-    fn_name = test_fn.__name__
+    fn_name = getattr(test_fn, '__wrapped__', test_fn).__name__
     title = title or f'Running test function {fn_name!r} over {size} inputs'
 
     print_path(callable_location(test_fn))

@@ -61,6 +61,7 @@ __all__ = [
     "MethodSignatureUniMsg",
     # RPC messages
     "RpcUniMsg",
+    "ChannelUniMsg",
     "RequestUniMsg",
     "RequestPayload",
     "ResponseUniMsg",
@@ -161,7 +162,7 @@ type ResponseUnion = OkUniMsg | ErrUniMsg | ResUniMsg
 
 type EventUnion = FutureCanceledUniMsg | FutureCompletedUniMsg
 
-type RpcUnion = RequestUnion | ResponseUnion | EventUnion
+type RpcUnion = RequestUnion | ResponseUnion | EventUnion | ChannelUniMsg
 
 type AnyUni = NoDefMsgUnion | DefMsgUnion | RpcUnion
 
@@ -367,7 +368,7 @@ class PlaceholderUniMsg(ResourceDefUniMsg):
 
 class FunctionArgument(Struct):
     name: str
-    type: RefUniMsg
+    type: RefUniMsg | None
     optional: bool | UnsetType = UNSET
     default: NoDefMsgUnion | UnsetType = UNSET
     rest: bool | UnsetType = UNSET
@@ -516,6 +517,18 @@ def toMethodSignature(msg: FunctionDefUniMsg, mem: Membership) -> MethodSignatur
 # RPC messages
 class RpcUniMsg(UniMsg, tag_field='kind', kw_only=True):
     pass
+
+
+# RPC messages
+
+
+# not used by typescript SDK, used for debugging
+# does not handle errors because the way the Uni protocol message ADT is split
+# up is highly verbose and repetitive, and I don't want to make it even more so
+class ChannelUniMsg(RpcUniMsg, kw_only=True):
+    value: 'NoDefMsgUnion'
+    last: bool
+    defs: list[DefMsgUnion] = []
 
 
 class RequestPayload(Struct):

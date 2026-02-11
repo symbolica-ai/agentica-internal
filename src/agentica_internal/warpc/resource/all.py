@@ -12,6 +12,8 @@ from .virtual_object import ObjectData
 from .virtual_type import TypeData, CallableTypeData, TypeVarData, TypeAliasData, GenericAliasData, TypeUnionData, ForwardRefData
 from .virtual_async import FutureData, unregister_virtual_future
 from .virtual_enum import EnumKind, EnumClassData
+from .virtual_property import PropertyData
+from .virtual_exception import ExceptionData
 from .base import ResourceData
 
 __all__ = [
@@ -35,5 +37,7 @@ __all__ = [
     'FutureData',
     'EnumClassData',
     'EnumKind',
+    'PropertyData',
+    'ExceptionData',
     'unregister_virtual_future',
 ]

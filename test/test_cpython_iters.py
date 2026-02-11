@@ -76,6 +76,7 @@ def verify_iter_len(obj: Iterable, n_true: int) -> None:
     assert n_obj == n_true, f"iter_len(obj) = {n_obj} != {n_true}"
 
     it = iter(obj)
+    # print(type(obj), type(it))
     n_iter = iter_len(obj)
     assert n_iter == n_true
 

@@ -18,9 +18,9 @@ __all__ = [
 ###############################################################################
 
 def tag_match(tags_set: set[str], tags_str: str):
-    if tags_str == 'all':
+    if tags_str == 'all' and '__' not in tags_set:
         return True
-    if tags_str == '1' and '_' not in tags_set:
+    if tags_str == '1' and '_' and '__' not in tags_set:
         return True
     tags_set = set(t.lower() for t in tags_set)
     tags_str = GROUP_RE.sub(lambda g: GROUP_EXPAND(g.group(0)), tags_str)
@@ -40,9 +40,9 @@ GROUP_RE = re.compile(rf'\b({'|'.join(GROUP_NAMES)})\b')
 def should_log_tag(default: bool, tags: set[str]) -> bool:
     curr = get_log_tags()
     if curr == 'ALL':
-        return True
-    if curr == '1' and '_' not in tags:
-        flag = True
+        flag = '__' not in tags
+    elif curr == '1':
+        flag = '_' not in tags and '__' not in tags
     elif curr:
         flag = tag_match(tags, curr.lower())
     else:

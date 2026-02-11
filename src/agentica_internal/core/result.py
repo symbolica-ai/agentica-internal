@@ -2,15 +2,17 @@
 
 from typing import Any, NamedTuple, TYPE_CHECKING
 
-from .sentinels import Sentinel, is_sentinel, ERRORED, PENDING, CANCELED
+from .sentinels import *
 
 __all__ = [
     'Result',
     'set_future_result',
     'get_future_result',
-    'OK_RESULT',
+    'EMPTY_RESULT',
+    'NO_RESULT',
     'PENDING_RESULT',
     'CANCELED_RESULT',
+    'ERRORED_RESULT'
 ]
 
 ################################################################################
@@ -25,20 +27,12 @@ class Result(NamedTuple):
     value: Any
     error: BaseException | None
 
-    @staticmethod
-    def unavailable(sentinel: Sentinel | None = None) -> 'Result':
-        if sentinel is PENDING:
-            return PENDING_RESULT
-        elif sentinel is ERRORED:
-            return ERRORED_RESULT
-        elif sentinel is CANCELED:
-            return CANCELED_RESULT
-        return Result(False, sentinel, None)
+    ################################################################################
 
     @staticmethod
     def good(value: Any) -> 'Result':
         if value is None:
-            return OK_RESULT
+            return EMPTY_RESULT
         return Result(True, value, None)
 
     @staticmethod
@@ -46,11 +40,36 @@ class Result(NamedTuple):
         return Result(True, ERRORED, exc)
 
     @staticmethod
+    def unavailable(reason: Pending | Canceled | Errored | None = None) -> 'Result':
+        if reason is PENDING:  return PENDING_RESULT
+        if reason is CANCELED: return CANCELED_RESULT
+        if reason is ERRORED:  return ERRORED_RESULT
+        return NO_RESULT
+
+    ############################################################################
+
+    @staticmethod
+    def from_triple(done: bool, value: Any, error: BaseException) -> 'Result':
+        if not done:
+            assert error is None
+            return Result.unavailable(value)
+        if error is None:
+            if value is None:
+                return EMPTY_RESULT
+            return Result(True, value, None)
+        else:
+            return Result(True, ERRORED, error)
+
+    ############################################################################
+
+    @staticmethod
     def from_future(future: 'asyncio.Future') -> 'Result':
         return get_future_result(future)
 
     def into_future(self, future: 'asyncio.Future') -> None:
         set_future_result(future, self)
+
+    ############################################################################
 
     @property
     def is_ok(self) -> bool:
@@ -146,10 +165,16 @@ def set_future_result(future: 'asyncio.Future', result: Result) -> None:
 
 ###############################################################################
 
-OK_RESULT       = Result(True, None, None)
+EMPTY_RESULT    = Result(True, None, None)
+
+###############################################################################
+
+NO_RESULT       = Result(False, None, None)
 PENDING_RESULT  = Result(False, PENDING, None)
 CANCELED_RESULT = Result(False, CANCELED, None)
 ERRORED_RESULT  = Result(False, ERRORED, None)
+
+SENT_TO_RES = {PENDING: PENDING_RESULT, CANCELED: CANCELED_RESULT, ERRORED: ERRORED_RESULT}
 
 # NOTE: Result.unavailable(PENDING) will return the singleton PENDING_RESULT, etc.
 # ERRORED_RESULT is for out-of-band errors, unlike Result.bad(exception) which is

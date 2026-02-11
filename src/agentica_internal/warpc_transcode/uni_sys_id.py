@@ -47,6 +47,7 @@ BUILTIN_UNI_IDS = {
     "magicStackTrace": -303,
     "magicLen": -304,
     "magicKeys": -305,
+    "magicStr": -306,
     "Object.entries": -401,
     "Object.keys": -402,
     "Object.is": -403,

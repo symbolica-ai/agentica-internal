@@ -19,6 +19,7 @@ type EnumKind = Literal['any', 'int', 'str', 'repr', 'flag', 'intflag']
 class EnumClassData(ResourceData):
     __slots__ = 'kind', 'name', 'qualname', 'module', 'members', 'methods'
 
+    KIND = Kind.Class
     FORBIDDEN_FORM = forbidden_class
 
     kind:     EnumKind

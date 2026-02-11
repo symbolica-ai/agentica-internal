@@ -96,6 +96,7 @@ class ReplSessionInfo:
     globals:    ReplResourcesInfo
     system:     ReplSystemInfo
     agentic_fn: ReplCallableInfo
+    supports_custom_tools: bool = False
 
     @staticmethod
     def empty() -> 'ReplSessionInfo':
@@ -106,6 +107,7 @@ class ReplSessionInfo:
             globals=ReplResourcesInfo(),
             system=ReplSystemInfo(),
             agentic_fn=ReplCallableInfo(),
+            supports_custom_tools=False,
         )
 
     ############################################################################
@@ -117,6 +119,11 @@ class ReplSessionInfo:
     @property
     def is_agent(self) -> bool:
         return self.role == 'agent'
+
+    @property
+    def uses_tool_calls(self) -> bool:
+        """Returns True if the model should use tool calls instead of markdown."""
+        return self.supports_custom_tools
 
     ############################################################################
 
@@ -232,6 +239,9 @@ class ReplSessionInfo:
 SESSION_VARS = {
     'is_agentic_fn',
     'is_agent',
+    # tool call support
+    'supports_custom_tools',
+    'uses_tool_calls',
     # for agentic functions AND agents
     'task_description',
     'return_type',

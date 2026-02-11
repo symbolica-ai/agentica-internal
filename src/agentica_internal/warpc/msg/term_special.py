@@ -1,16 +1,11 @@
 # fmt: off
 
-import enum
-import datetime as DT
-import dataclasses as DC
-import itertools as IT
-import inspect as INS
-import re as RE
-import warnings
-import os
-import copyreg
+from typing import Union
 
-from ...core.anno import union_iter
+import enum
+import re
+import warnings
+from copyreg import _reconstructor as reconstructor  # type: ignore
 
 from .__ import *
 from .term import *
@@ -20,6 +15,7 @@ from .msg_aliases import *
 __all__ = [
     'SlotObjMsg',
     'ReduceObjMsg',
+    'ConstructObjMsg',
     'RegexPatternMsg',
     'RegexMatchMsg',
     'ClassUnionMsg',
@@ -32,14 +28,19 @@ __all__ = [
 ################################################################################
 
 if TYPE_CHECKING:
-    from .term_resource import ResourceMsg, SystemResourceMsg
+    from .term_resource import SystemResourceMsg
 
 ################################################################################
 
-type SlotObjT = DC.Field | DC._DataclassParams | DC.InitVar  # type: ignore
+def slot_stdlib_types():
+    import dataclasses as DC
+    return DC.Field, DC._DataclassParams, DC.InitVar  # type: ignore
 
-SLOT_OBJ_TYPES: tuple[type, ...] = SlotObjT.__value__.__args__  # type: ignore
+SLOT_OBJ_TYPES: tuple[type, ...] = slot_stdlib_types()
 
+SlotObjT = Union[*SLOT_OBJ_TYPES]
+
+del slot_stdlib_types
 
 ################################################################################
 
@@ -50,7 +51,7 @@ class SlotObjMsg(TermPassByValMsg, tag='slots'):
 
     type V = SlotObjT
 
-    cls: 'SystemResourceMsg'
+    cls:   'SystemResourceMsg'
     slots: 'Rec[TermMsg]'
 
     def __len__(self) -> int:
@@ -86,36 +87,23 @@ class SlotObjMsg(TermPassByValMsg, tag='slots'):
 
 ################################################################################
 
-type ReducibleBuiltinsObjT = (
-    partial | range | map | filter | zip
-)
+def reducible_stdlib_types():
+    import itertools as IT, inspect as INS, os as OS, datetime as DT
+    import ipaddress as IP
+    return (
+        partial,
+        IT.count, IT.islice, IT.cycle, IT.repeat, IT.takewhile, IT.dropwhile, IT.zip_longest, IT.starmap,
+        OS.stat_result,
+        DT.date, DT.time, DT.datetime, DT.timedelta, DT.tzinfo, DT.timezone,
+        INS.Signature, INS.Parameter, INS.BoundArguments,
+        IP.IPv4Address, IP.IPv4Interface, IP.IPv4Network, IP.IPv6Address, IP.IPv6Interface, IP.IPv6Network
+    )
 
-type ReducibleItertoolsObjT = (
-    IT.count | IT.islice | IT.cycle | IT.repeat | IT.takewhile | IT.dropwhile |
-    IT.zip_longest | IT.starmap
-)
+REDUCIBLE_TYPES = reducible_stdlib_types()
 
-type ReducibleOSObjT = (
-    os.stat_result
-)
+ReducibleObjT = Union[*REDUCIBLE_TYPES]
 
-type ReducibleDatetimeObjT = (
-    DT.date | DT.time | DT.datetime | DT.timedelta
-)
-
-type ReducibleInspectObjT = (
-    INS.Signature | INS.Parameter | INS.BoundArguments
-)
-
-type ReducibleObjT = (
-    ReducibleBuiltinsObjT
-    | ReducibleItertoolsObjT
-    | ReducibleInspectObjT
-    | ReducibleOSObjT
-    | ReducibleDatetimeObjT
-)
-
-REDUCIBLE_TYPES: tuple[type, ...] = tuple(union_iter(ReducibleObjT, type))
+del reducible_stdlib_types
 
 ################################################################################
 
@@ -124,8 +112,8 @@ class ReduceObjMsg(TermPassByValMsg, tag='reduce'):
 
     type V = ReducibleObjT
 
-    cls: 'SystemResourceMsg'
-    args: 'Tup[TermMsg]'
+    cls:   'SystemResourceMsg'
+    args:  'Tup[TermMsg]'
     state: 'TermMsg | None'
 
     def __shape__(self) -> str:
@@ -143,30 +131,83 @@ class ReduceObjMsg(TermPassByValMsg, tag='reduce'):
             obj.__setstate__(state) if state is not None else None
             return obj
         except BaseException as exc:
-            raise E.WarpDecodingError(f"Could not expand {self}:\n{exc!r}")
+            raise E.WarpDecodingError(f"Could not expand {_cls} on {args}\n{self}:\n{exc!r}")
 
     @classmethod
-    def encode_compound(cls, term: V, enc: EncoderP) -> 'ReduceObjMsg':
+    def encode_compound(cls, term: Any, enc: EncoderP) -> 'ReduceObjMsg':
         _cls = type(term)
         try:
             reduced = term.__reduce__()
-            if len(reduced) == 2:
+            n = len(reduced)
+            assert n == 2 or n == 3, f"bad reduction: {f_object_id(reduced)}"
+            if n == 2:
                 clb, args = reduced
-                assert clb is not copyreg._reconstructor
                 state = None
-            elif len(reduced) == 3:
-                clb, args, state = reduced
             else:
-                raise E.WarpEncodingError(f"bad reduction: {f_object_id(reduced)}")
-            # assert clb is _cls, f"constructor is not original type: {clb} != {_cls}"
+                clb, args, state = reduced
+            assert clb is _cls, f"constructor is not original type: {clb} != {_cls}"
             assert type(args) is tuple, f"args is not a tuple: {f_object_id(args)}"
         except BaseException as exc:
             # f_exc = fmt_exception(exc)
             raise E.WarpEncodingError(f"Could not reduce {f_object_id(term)}: {exc}")
         cls_msg = enc.enc_system_resource(_cls)
         args_msg = enc.enc_sequence(args)
-        state_msg = enc.enc_any(state)
+        state_msg = enc.enc_any(state) if state is not None else None
         return ReduceObjMsg(cls_msg, args_msg, state_msg)
+
+
+################################################################################
+
+def constructible_stdlib_types():
+    import urllib.parse as UP, urllib.request as UR
+    return (
+        UP.DefragResult, UP.DefragResultBytes, UP.ParseResult, UP.ParseResultBytes, UP.SplitResult,
+        UP.SplitResultBytes, UR.Request
+    )
+
+CONSTRUCTIBLE_TYPES = constructible_stdlib_types()
+
+ConstructibleObjT = Union[*CONSTRUCTIBLE_TYPES]
+
+del constructible_stdlib_types
+
+################################################################################
+
+class ConstructObjMsg(TermPassByValMsg, tag='reconstruct'):
+
+    type V = ConstructibleObjT
+
+    cls:   'SystemResourceMsg'
+    base:  'SystemResourceMsg'
+    init:  'TermMsg'
+
+    def decode(self, dec: DecoderP) -> V:
+        cls = self.cls.sys_resource
+        base = self.base.sys_resource
+        if not isinstance(cls, type) or cls not in CONSTRUCTIBLE_TYPES:
+            raise E.WarpDecodingError(f"{cls!r} is not constructible type")
+        if not isinstance(base, type) or not base.__flags__ & 256:
+            raise E.WarpDecodingError(f"{base!r} is not a constructible base")
+        init = dec.dec_any(self.init)
+        return reconstructor(cls, base, init)
+
+    @classmethod
+    def encode_compound(cls, term: Any, enc: EncoderP) -> 'ConstructObjMsg':
+        try:
+            reduced = term.__reduce__()
+            assert len(reduced) == 2
+            clb, args = reduced
+            assert clb is reconstructor
+            assert len(args) == 3
+            _cls, base, init = args
+            assert _cls is type(term)
+            assert type(base) is type
+            cls_msg = enc.enc_system_resource(_cls)
+            base_msg = enc.enc_system_resource(base)
+            init_msg = enc.enc_any(init)
+        except BaseException as exc:
+            raise E.WarpEncodingError(f"Could not deconstruct {f_object_id(term)}: {exc}")
+        return ConstructObjMsg(cls_msg, base_msg, init_msg)
 
 
 ################################################################################
@@ -174,13 +215,13 @@ class ReduceObjMsg(TermPassByValMsg, tag='reduce'):
 class RegexPatternMsg(TermPassByValMsg, tag='regex_pattern'):
     """Message describing re.Pattern objects by value."""
 
-    type V = RE.Pattern
+    type V = re.Pattern
 
     pattern: str
     flags:   int
 
     def decode(self, dec: DecoderP) -> V:
-        return RE._compile(self.pattern, self.flags)
+        return re._compile(self.pattern, self.flags)  # type: ignore
 
     @classmethod
     def encode_atom(cls, term: V) -> 'RegexPatternMsg':
@@ -192,17 +233,17 @@ class RegexPatternMsg(TermPassByValMsg, tag='regex_pattern'):
 class RegexMatchMsg(TermPassByValMsg, tag='regex_match'):
     """Message describing re.Match objects by value."""
 
-    type V = RE.Match
+    type V = re.Match
 
     pattern: str
     flags:   int
     string:  str
-    span:   tuple[int, int]
+    span:    tuple[int, int]
 
     def decode(self, dec: DecoderP) -> V:
         # this is ugly but since re.Match is not pickle-able there is
         # no other way to do it!
-        patt = RE._compile(self.pattern, self.flags)
+        patt = re._compile(self.pattern, self.flags)  # type: ignore
         start, end = span = self.span
         for match in patt.finditer(self.string, start, end):
             if match.span() == span:
@@ -220,7 +261,7 @@ class RegexMatchMsg(TermPassByValMsg, tag='regex_match'):
 class ClassUnionMsg(TermPassByValMsg, tag='class_union'):
     """Message for simple inline unions like `int | float` (used by typescript for 'Number')."""
 
-    alts: 'ClassesTupleMsg'
+    alts: 'Tup[ClassMsg]'
 
     def decode(self, dec: DecoderP) -> TypeT:
         try:
@@ -241,7 +282,7 @@ class ClassUnionMsg(TermPassByValMsg, tag='class_union'):
 
 class EnumMemberMsg(TermPassByValMsg):
 
-    cls: 'ResourceMsg'
+    cls: 'ClassMsg'
 
     def decode(self, dec: DecoderP) -> enum.Enum: ...
 
@@ -259,7 +300,7 @@ class EnumMemberMsg(TermPassByValMsg):
 
 class EnumKeyMsg(EnumMemberMsg, tag='enum_key'):
 
-    cls: 'ResourceMsg'
+    cls: 'ClassMsg'
     key:  str
 
     def decode(self, dec: DecoderP) -> TypeT:
@@ -273,7 +314,7 @@ class EnumKeyMsg(EnumMemberMsg, tag='enum_key'):
 
 class EnumValMsg(EnumMemberMsg, tag='enum_val'):
 
-    cls: 'ResourceMsg'
+    cls: 'ClassMsg'
     val: 'TermMsg'
 
     def decode(self, dec: DecoderP) -> TypeT:

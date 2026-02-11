@@ -28,6 +28,16 @@ def counter():
     return _next
 
 
+class SequenceObject:
+    def __getitem__(self, p):
+        if p >= 5:
+            raise IndexError()
+        return 0
+
+    def __len__(self):
+        return 5
+
+
 patt = re.compile('.')
 
 ITERATOR_FNS = (
@@ -38,9 +48,10 @@ ITERATOR_FNS = (
     lambda: iter(tup),
     lambda: iter(lst),
     lambda: iter(st),
-    lambda: dct.items(),
-    lambda: dct.keys(),
-    lambda: dct.values(),
+    lambda: iter(enumerate(lst)),
+    lambda: iter(dct.items()),
+    lambda: iter(dct.keys()),
+    lambda: iter(dct.values()),
     lambda: chain(lst, lst, lst),
     lambda: islice(lst, 2),
     lambda: count(0, 3),
@@ -48,4 +59,5 @@ ITERATOR_FNS = (
     lambda: (str(i) for i in lst),
     lambda: gen_fn(),
     lambda: iter(counter(), 5),
+    lambda: iter(SequenceObject()),
 )

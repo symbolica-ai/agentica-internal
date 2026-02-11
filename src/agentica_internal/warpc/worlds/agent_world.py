@@ -298,6 +298,7 @@ class AgentWorld(World):
                 self.handle_future_event_msg(msg)
 
             elif isinstance(msg, ChannelMsg):
+                self.on_channel(Incoming, self.tick, msg)
                 channel = self.channel
                 if channel is not None:
                     channel.append(msg)
@@ -379,6 +380,7 @@ class AgentWorld(World):
                         self.handle_future_event_msg(msg)
 
                     elif isinstance(msg, ChannelMsg):
+                        self.on_channel(Incoming, self.tick, msg)
                         channel = self.channel
                         if channel is not None:
                             channel.append(msg)
@@ -409,11 +411,14 @@ class AgentWorld(World):
         self.send_msg(CHANNEL_CLOSED_MSG)
 
     def channel_send_value(self, value: Any, last: bool, /):
-        channel_msg = ChannelMsg.encode(self.root, Result.good(value), last)
+        src_loc = get_stack_identifier(1) if flags.SEND_VIRTUAL_REQUEST_ORIGIN else None
+        channel_msg = ChannelMsg.encode(self.root, Result.good(value), last, src_loc)
+        self.on_channel(Outgoing, self.tick, channel_msg)
         self.send_msg(channel_msg)
 
     def channel_send_exception(self, exception: BaseException, last: bool, /):
-        channel_msg = ChannelMsg.encode(self.root, Result.bad(exception), last)
+        src_loc = get_stack_identifier(1) if flags.SEND_VIRTUAL_REQUEST_ORIGIN else None
+        channel_msg = ChannelMsg.encode(self.root, Result.bad(exception), last, src_loc)
         self.send_msg(channel_msg)
 
     def channel_recv(self) -> Result | Closed | Pending:

@@ -75,7 +75,7 @@ class CompleteFuture(FutureRequest):
         from ..msg.all import CompleteFutureMsg, ResultMsg
         return CompleteFutureMsg(
             enc.enc_future(self.future),
-            ResultMsg.encode(enc, self.result)
+            ResultMsg.encode(self.result, enc)
         )
 
     def hook_key(self):

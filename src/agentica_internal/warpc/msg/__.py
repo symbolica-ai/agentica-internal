@@ -3,14 +3,12 @@
 
 from msgspec import UNSET, EncodeError, Raw, Struct, UnsetType, json, msgpack  # noqa: F401
 
+from ..data.all import *
 from ..__ import *
 from .__json import *
 from .__msgpack import *
 
 from .codec import EncoderP, DecoderP, CodecP
-
-# if TYPE_CHECKING:
-#     from .all import *
 
 def seq_shape(seq: tuple['Msg', ...]) -> str:
     n = len(seq)

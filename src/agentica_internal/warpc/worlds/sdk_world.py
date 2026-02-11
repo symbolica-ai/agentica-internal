@@ -274,9 +274,11 @@ class SDKWorld(World):
                 self.handle_future_msg(msg)
 
             elif isinstance(msg, FutureEventMsg):
+                self.on_event(Incoming, self.tick, msg)
                 self.handle_future_event_msg(msg)
 
             elif isinstance(msg, ChannelMsg):
+                self.on_channel(Incoming, self.tick, msg)
                 await self.channel.put(msg)
 
             elif isinstance(msg, RemotePrintMsg):
@@ -294,7 +296,7 @@ class SDKWorld(World):
                 ctx.warn(f'no future associated with {f_id(fid)}')
                 return
 
-            result = msg.data.decode(self.root)
+            result = msg.result.decode(self.root)
             if result.is_ok:
                 ctx.info(f'future.set_result', result.value)
                 future.set_result(result.value)
@@ -311,11 +313,14 @@ class SDKWorld(World):
         await self.send_msg(CHANNEL_CLOSED_MSG)
 
     async def channel_send_value(self, value: Any, *, last: bool = False):
-        channel_msg = ChannelMsg.encode(self.root, Result.good(value), last)
+        src_loc = get_stack_identifier(1) if flags.SEND_VIRTUAL_REQUEST_ORIGIN else None
+        channel_msg = ChannelMsg.encode(self.root, Result.good(value), last, src_loc)
+        self.on_channel(Outgoing, self.tick, channel_msg)
         await self.send_msg(channel_msg)
 
     async def channel_send_exception(self, exception: BaseException, *, last: bool):
-        channel_msg = ChannelMsg.encode(self.root, Result.bad(exception), last)
+        src_loc = get_stack_identifier(1) if flags.SEND_VIRTUAL_REQUEST_ORIGIN else None
+        channel_msg = ChannelMsg.encode(self.root, Result.bad(exception), last, src_loc)
         await self.send_msg(channel_msg)
 
     async def channel_recv_value(self) -> TermT | Closed:

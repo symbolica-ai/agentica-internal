@@ -11,6 +11,7 @@ from ..request.request_future import *
 from ..msg.codec import EncoderP, DecoderP, CodecP
 
 from .__raw import *
+from .logging import *
 
 if TYPE_CHECKING:
     from ..msg.resource_data import *

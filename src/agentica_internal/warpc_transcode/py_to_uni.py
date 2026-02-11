@@ -1,15 +1,9 @@
 from msgspec import UNSET, UnsetType
 
 from agentica_internal.warpc.alias import *
-from agentica_internal.warpc.alias import FrameID as PyFrameID
-from agentica_internal.warpc.alias import MessageID as PyMessageID
-from agentica_internal.warpc.messages import *
-from agentica_internal.warpc.msg.resource_def import DefinitionMsg as ResourceDefMsg
-from agentica_internal.warpc.msg.rpc_framed import FramedRequestMsg, FramedResponseMsg
+from agentica_internal.warpc.msg.all import *
 
 # Compatibility aliases for legacy/new message names
-from agentica_internal.warpc.msg.rpc_legacy import LegacyMFIReplyMsg as MFIReplyMsg
-from agentica_internal.warpc.msg.rpc_legacy import LegacyResourceReplyMsg as ResourceReplyMsg
 from agentica_internal.warpc.msg.rpc_request_resource import ResourceCallFunctionMsg as CallMsg
 from agentica_internal.warpc.msg.rpc_request_resource import ResourceCallMethodMsg as CallMethodMsg
 from agentica_internal.warpc.msg.rpc_request_resource import (
@@ -37,7 +31,7 @@ from .uni_msgs import (
     toMethodSignature,
 )
 
-__all__ = ['py_to_uni_rpc', 'py_to_uni_request', 'py_to_uni_response']
+__all__ = ['py_to_uni_rpc']
 
 """
 note: also see warpc/msg/__final__.py for how message classes are finalized...
@@ -46,75 +40,54 @@ note: also see warpc/msg/__final__.py for how message classes are finalized...
 
 # Py RPC -> Uni RPC
 def py_to_uni_rpc(msg: RPCMsg, ctx: dict[DefnUID, DefUniMsg]) -> RpcUniMsg:
+    new_defs = {}
+
+    for py_def in getattr(msg, 'defs', ()):
+        py_def_to_uni_def(py_def, new_defs, ctx)
+
     match msg:
-        case FramedRequestMsg():
-            selfFID, parentFID, requestedFID = py_to_uni_frame(msg.pid, msg.fid, msg.mid)
-            inner = py_to_uni_request(msg.data, ctx, (selfFID, parentFID, requestedFID))
-            outer_defs: dict[DefnUID, DefUniMsg] = {}
-            for d in msg.defs:
-                py_def_to_uni_def(d, outer_defs, ctx)
-            return type(inner)(
-                payload=inner.payload,
-                selfFID=selfFID,
-                parentFID=parentFID,
-                requestedFID=requestedFID,
-                defs=(list(getattr(inner, 'defs', [])) + list(outer_defs.values())),
-            )
-        case FramedResponseMsg():
-            return py_to_uni_response(msg, ctx)
-        case FutureResultMsg():
-            info = msg.data
-            selfFID, parentFID = 0, 0  # legacy approximation; frames not tied to IID
-            match info:
-                case OkMsg():
-                    return OkUniMsg(selfFID=selfFID, parentFID=parentFID, iid=str(msg.fid))
-                case ValueMsg():
-                    new_defs: dict[DefnUID, DefUniMsg] = {}
-                    term = py_term_to_uni_concept(info.val, new_defs, ctx)
-                    assert isinstance(term, (NoDefUniMsg, DefUniMsg))
-                    return ResUniMsg(
-                        selfFID=selfFID,
-                        parentFID=parentFID,
-                        iid=str(msg.fid),
-                        payload=ResPayload(result=term),
-                        defs=[v for v in new_defs.values()],
-                    )
-                case ErrorMsg():
-                    return ErrUniMsg(
-                        selfFID=selfFID,
-                        parentFID=parentFID,
-                        iid=str(msg.fid),
-                        payload=ErrPayload(error=to_exc_uni_msg(info.exc, ctx)),
-                    )
-                case InternalErrorMsg():
-                    return ErrUniMsg(
-                        selfFID=selfFID,
-                        parentFID=parentFID,
-                        iid=str(msg.fid),
-                        payload=ErrPayload(error=InternalErrorUniMsg(error=info.error)),
-                    )
-                case _:
-                    raise ValueError(f'Unsupported FutureResult payload: {info}')
-        case ResourceRequestMsg():
-            return py_to_uni_request(msg, ctx)
-        case ResourceReplyMsg():
-            return py_to_uni_response(msg, ctx)
-        case MFIReplyMsg():
-            return py_to_uni_response(msg, ctx)
+        case RemotePrintMsg(text, origin):
+            return consoleLogMsg(f'{origin}\n{text}' if origin else text)
+
+        case ChannelMsg(data=data, last=last):
+            term = py_term_to_uni_concept(data.value, new_defs, ctx)
+            assert isinstance(term, NoDefUniMsg)
+            return ChannelUniMsg(value=term, last=last, defs=list(new_defs.values()))
+
+        case FramedRequestMsg(request=request):
+            assert isinstance(request, ResourceRequestMsg)
+            frames = py_to_uni_request_ids(msg)
+            return py_to_uni_rsrc_request(request, new_defs, ctx, frames)
+
+        case FramedResponseMsg(result=result):
+            frames = py_to_uni_response_ids(msg)
+            return py_result_to_uni_result(result, new_defs, ctx, frames)
+
+        case FutureResultMsg(result=result_msg):
+            # why isn't this using the futureid?
+            frames = 0, 0  # legacy approximation; frames not tied to IID
+            return py_result_to_uni_result(result_msg, new_defs, ctx, frames)
+
         case _:
             raise ValueError(f'Unsupported RPC message: {msg}')
 
 
-# Frame model translation
-def py_to_uni_frame(
-    pid: PyFrameID, fid: PyFrameID, mid: PyMessageID
-) -> tuple[FrameID, FrameID, FrameID]:
-    # HACK: hack hack hack ... NO VIRTUAL OBJECTS ON THE TS SIDE!!!
-    # TODO: why are frames ticking up without request calls? (so .ts_log)
-    selfFID = pid
-    parentFID = 0  # everything goes to the root frame
-    requestedFID = mid
-    return selfFID, parentFID, requestedFID
+CONSOLE_LOG = RefUniMsg(uid=DefnUID(world='client', resource=BUILTIN_UNI_IDS['console.log']))
+
+
+def consoleLogMsg(text: str):
+    from ..core.print import add_gutter, RP_GUTTER
+
+    text = add_gutter(RP_GUTTER, text)
+    return CallFunctionUniMsg(
+        selfFID=0,
+        parentFID=0,
+        requestedFID=999,
+        payload=CallFunctionPayload(
+            fun=CONSOLE_LOG, args=[CallArg(name='arg', val=StrUniMsg(text))]
+        ),
+        defs=[],
+    )
 
 
 def try_intercept_dict_protocol(
@@ -218,31 +191,17 @@ def try_intercept_dict_protocol(
             )
 
 
-# Py Request -> Uni Request
-def py_to_uni_request(
-    msg: RequestMsg,
-    ctx: dict[DefnUID, DefUniMsg],
-    frames: tuple[FrameID, FrameID, FrameID] | None = None,
-) -> RequestUniMsg:  # type: ignore
-    match msg:
-        case ReplRequestMsg():
-            raise ValueError("repl requests are not supported in universal messages")
-        case ResourceRequestMsg():
-            return py_to_uni_rsrc_request(msg, ctx, frames)
-        case _:
-            raise ValueError(f'Unexpected python request message: {msg}')
-
-
 def py_to_uni_rsrc_request(
     msg: ResourceRequestMsg,
+    new_defs: dict[DefnUID, DefUniMsg],
     ctx: dict[DefnUID, DefUniMsg],
-    frames: tuple[FrameID, FrameID, FrameID] | None = None,
+    frames: UniRequestIDs,
 ) -> RequestUniMsg:
     # Helper function for making call-like requests
+
     def make_args(
         info: NewMsg | CallMsg | CallMethodMsg,
         args_def: list[FunctionArgument] | None = None,  # THIS IS ORDERED
-        new_defs: dict[DefnUID, DefUniMsg] = {},
         skip_self: bool = False,
     ) -> list[CallArg]:
         args: dict[str, NoDefUniMsg] = {}
@@ -292,10 +251,7 @@ def py_to_uni_rsrc_request(
         return pos_args
 
     info = msg
-    if frames is None:
-        selfFID, parentFID, requestedFID = py_to_uni_frame(msg.pid, msg.fid, msg.mid)
-    else:
-        selfFID, parentFID, requestedFID = frames
+    parentFID, selfFID, requestedFID = frames
 
     # Any new defs nested inside the py request
     new_defs: dict[DefnUID, DefUniMsg] = {}
@@ -321,9 +277,7 @@ def py_to_uni_rsrc_request(
                 payload=CallNewPayload(
                     cls=cls_ref,
                     args=make_args(
-                        info,
-                        getattr(getattr(cls_def, "payload", None), "ctor_args", None),
-                        new_defs,
+                        info, getattr(getattr(cls_def, "payload", None), "ctor_args", None)
                     ),
                     type_args=UNSET,
                 ),
@@ -387,9 +341,7 @@ def py_to_uni_rsrc_request(
                         payload=CallMethodPayload(
                             owner=self_ref,
                             method_name=method_name,
-                            args=make_args(
-                                info, fun_def.payload.arguments, new_defs, skip_self=True
-                            ),
+                            args=make_args(info, fun_def.payload.arguments, skip_self=True),
                             method_ref=fun_ref,
                         ),
                         defs=list(new_defs.values()),
@@ -402,7 +354,10 @@ def py_to_uni_rsrc_request(
                     requestedFID=requestedFID,
                     payload=CallFunctionPayload(
                         fun=fun_ref,
-                        args=make_args(info, fun_def.payload.arguments, new_defs),
+                        args=make_args(
+                            info,
+                            fun_def.payload.arguments,
+                        ),
                     ),
                     defs=list(new_defs.values()),
                 )
@@ -414,7 +369,7 @@ def py_to_uni_rsrc_request(
                 requestedFID=requestedFID,
                 payload=CallFunctionPayload(
                     fun=fun_ref,
-                    args=make_args(info, None, new_defs),
+                    args=make_args(info, None),
                 ),
                 defs=list(new_defs.values()),
             )
@@ -484,7 +439,6 @@ def py_to_uni_rsrc_request(
                         args=make_args(
                             info,
                             getattr(getattr(method_def, "payload", None), "arguments", None),
-                            new_defs,
                         ),
                         method_ref=method_ref,
                     ),
@@ -498,8 +452,8 @@ def py_to_uni_rsrc_request(
                 requestedFID=requestedFID,
                 payload=CallMethodPayload(
                     owner=self_ref,
-                    method_name=info.mth,
-                    args=make_args(info, None, new_defs),
+                    method_name=info.mth,  # py_to_ts_method_equivalent(info.mth),
+                    args=make_args(info, None),
                     method_ref=UNSET,
                 ),
                 defs=list(new_defs.values()),
@@ -508,10 +462,14 @@ def py_to_uni_rsrc_request(
         case CallSystemMethodMsg():
             self_msg = py_term_to_uni_concept(info.obj, new_defs, ctx)
             self_ref = referentialize(self_msg)
-            fun_uid = sridToUniSysId(info.fun.sid)
+            fun_msg = info.fun
+            if fun_msg.sys_resource is str:  # because str already means String
+                fun_uid = BUILTIN_UNI_IDS['magicStr']
+            else:
+                fun_uid = sridToUniSysId(fun_msg.sid)
             if fun_uid is None:
                 raise ValueError(
-                    f"System method {info.fun.sid} not found in transcoder context ... it may yet not be supported in the universal model."
+                    f"System method {fun_msg.sid} not found in transcoder context ... it may yet not be supported in the universal model."
                 )
             fun_ref = RefUniMsg(uid=DefnUID(world='client', resource=fun_uid))
 
@@ -619,80 +577,100 @@ def py_to_uni_rsrc_request(
             raise ValueError(f'Unsupported request for universal messages: {info}')
 
 
-# Py Response/Result -> Uni Response
-def py_to_uni_response(
-    msg: ResourceReplyMsg | MFIReplyMsg | FramedResponseMsg, ctx: dict[DefnUID, DefUniMsg]
+def py_result_to_uni_result(
+    result: ResultMsg,
+    new_defs: dict[DefnUID, DefUniMsg],
+    ctx: dict[DefnUID, DefUniMsg],
+    frames: UniResponseIDs,
 ) -> ResponseUniMsg:  # type: ignore
-    if isinstance(msg, FramedResponseMsg):
-        info = msg.data
-        pid = msg.pid
+    parentFID, selfFID = frames
+    done = result.done
+    value = result.value
+    error = result.error
+
+    payload = py_result_to_uni_payload(result, new_defs, ctx)
+    if isinstance(payload, ErrPayload):
+        return ErrUniMsg(selfFID=selfFID, parentFID=parentFID, payload=payload)
     else:
-        info = msg.info
-        pid = msg.pid if isinstance(msg, ResourceReplyMsg) else 0
-    selfFID, parentFID, requestedFID = py_to_uni_frame(pid, msg.fid, msg.mid)
+        defs = list(new_defs.values())
+        return ResUniMsg(selfFID=selfFID, parentFID=parentFID, payload=payload, defs=defs)
 
-    match info:
-        case OkMsg():
-            return OkUniMsg(selfFID=selfFID, parentFID=parentFID)
-        case ResultMsg():
-            new_defs: dict[DefnUID, DefUniMsg] = {}
-            term = py_term_to_uni_concept(info.val, new_defs, ctx)
 
-            # Validation
-            assert isinstance(term, (NoDefUniMsg, DefUniMsg)), f"Expected term for Res, got {term}"
+def py_result_to_uni_payload(
+    result: ResultMsg,
+    new_defs: dict[DefnUID, DefUniMsg],
+    ctx: dict[DefnUID, DefUniMsg],
+) -> ErrPayload | ResPayload:  # type: ignore
+    done = result.done
+    value = result.value
+    error = result.error
 
-            return ResUniMsg(
-                selfFID=selfFID,
-                parentFID=parentFID,
-                payload=ResPayload(result=term),
-                defs=[v for v in new_defs.values()],
-            )
-        case ErrorMsg():
-            return ErrUniMsg(
-                selfFID=selfFID,
-                parentFID=parentFID,
-                payload=ErrPayload(error=to_exc_uni_msg(info.exc, ctx)),
-            )
-        case InternalErrorMsg():
-            return ErrUniMsg(
-                selfFID=selfFID,
-                parentFID=parentFID,
-                payload=ErrPayload(error=InternalErrorUniMsg(error=info.error)),
-            )
-        case _:
-            raise ValueError(f'Unknown ReplyInfo message: {info}')
+    if error is not None or not done:
+        exc_msg = to_exc_uni_msg(error, new_defs, ctx)
+        return ErrPayload(error=exc_msg)
+
+    term = py_term_to_uni_concept(value, new_defs, ctx)
+
+    # Validation
+    assert isinstance(term, (NoDefUniMsg, DefUniMsg)), f"Expected term for Res, got {term}"
+
+    return ResPayload(result=term)
 
 
 def to_exc_uni_msg(
-    exc: ExceptionMsg, ctx: dict[DefnUID, DefUniMsg]
-) -> ForeignExceptionUniMsg | GenericExceptionUniMsg:
-    # if exception class is an unknown system resource, return a simplified exception
-    if isinstance(exc.cls, ResourceSysMsg):
-        from .conv_utils import sridToUniSysId
-
-        uni_res_id = sridToUniSysId(exc.cls.sid)
-        if uni_res_id is None:
+    exc: ExceptionMsg | None, new_defs: dict[DefnUID, DefUniMsg], ctx: dict[DefnUID, DefUniMsg]
+) -> GenericExceptionUniMsg | InternalErrorUniMsg | ForeignExceptionUniMsg:
+    match exc:
+        case ShallowUserExceptionMsg(ident=ident, exc_str=exc_str):
             return GenericExceptionUniMsg(
-                excp_cls_name=exc.name,
-                excp_str_args=[a.v for a in exc.args if isinstance(a, StrMsg)],
-                excp_stack=exc.stack,
+                excp_cls_name=ident.name, excp_str_args=[exc_str], excp_stack=[]
             )
+        case SystemExceptionMsg(exc_cls, exc_args):
+            from .conv_utils import sridToUniSysId
 
-    return ForeignExceptionUniMsg(
-        excp_cls=py_term_to_uni_concept(exc.cls, {}, ctx),
-        excp_args=[py_term_to_uni_concept(v, {}, ctx) for v in exc.args],
-    )
+            uni_res_id = sridToUniSysId(exc_cls.sid)
+            if uni_res_id is None:
+                return GenericExceptionUniMsg(
+                    excp_cls_name=exc_cls.sys_cls.__name__,
+                    excp_str_args=[a.v for a in exc_args if isinstance(a, StrMsg)],
+                    excp_stack=[],
+                )
+            excp_cls = py_term_to_uni_concept(exc_cls, new_defs, ctx)
+            excp_args = [py_term_to_uni_concept(v, new_defs, ctx) for v in exc_args]
+            return ForeignExceptionUniMsg(excp_cls=excp_cls, excp_args=excp_args)  # type: ignore
+
+        case DeepUserExceptionMsg(exc_ref=exc_ref, exc_str=exc_str):
+            # hack: look up the ForeignExceptionUniMsg that was stored previously in py_def_to_uni_def when it saw
+            # ExceptionDataMsg
+            uid = gridToResourceUID(exc_ref.rid)
+            match ctx.get(uid):
+                # if TS originally sent the exception, the current way the transcoder (and TS protocol)
+                # are designed, we have no choice but to make a copy of it that includes the raw string
+                # we'd need a pass-by-reference version of the TS exception msg
+                case ObjectDefUniMsg(payload=ObjectPayload(name=name, cls=excp_cls)):
+                    match ctx.get(excp_cls.uid):
+                        case ClassDefUniMsg(payload=ClassPayload(), uid=uid):
+                            excp_args = [StrUniMsg(exc_str)] if exc_str else []
+                            return ForeignExceptionUniMsg(excp_cls=excp_cls, excp_args=excp_args)
+                # otherwise, if python originally sent the exception, we translated it previously
+                # in py_def_to_uni_def when we saw its ExceptionDataMsg
+                case ForeignExceptionUniMsg() as exc_msg:
+                    return exc_msg
+
+        case InternalExceptionMsg(error):
+            return InternalErrorUniMsg(error=error)
+
+    return InternalErrorUniMsg(error="unknown error")
 
 
 # Py Term -> Uni Concept
 def py_term_to_uni_concept(
     term: TermMsg, new_defs: dict[DefnUID, DefUniMsg], ctx: dict[DefnUID, DefUniMsg]
 ) -> ConceptUniMsg:  # type: ignore
+    assert isinstance(term, TermMsg), f"not a TermMsg: {term}"
     match term:
         case ResourceMsg():
             match term:
-                case ResourceDefMsg():
-                    return py_def_to_uni_def(term, new_defs, ctx)
                 case ResourceRefMsg():
                     uid = gridToResourceUID(term.rid)
                     return RefUniMsg(uid=uid)
@@ -789,6 +767,10 @@ def py_term_to_uni_concept(
                 raise ValueError(f"Enum key '{term.key}' not found in class {clsRef.uid}")
             else:
                 raise ValueError(f"Unsupported enum member message: {term}")
+        case DeepUserExceptionMsg(exc_ref=exc_ref):
+            uid = gridToResourceUID(exc_ref.rid)
+            return RefUniMsg(uid=uid)
+
         case _:
             raise ValueError(f'Unknown Term message: {term}')
 
@@ -860,14 +842,29 @@ def get_class_def_from_name(cls_name: str, ctx: dict[DefnUID, DefUniMsg]) -> Cla
 
 # Py Def -> Uni Def
 def py_def_to_uni_def(
-    defmsg: ResourceDefMsg, new_defs: dict[DefnUID, DefUniMsg], ctx: dict[DefnUID, DefUniMsg]
-) -> DefUniMsg:
+    defmsg: DefinitionMsg, new_defs: dict[DefnUID, DefUniMsg], ctx: dict[DefnUID, DefUniMsg]
+) -> None:
     uni_def: DefUniMsg
     uid = gridToResourceUID(defmsg.rid)
+
     match defmsg.data:
+        case ExceptionDataMsg(cls, args):
+            # hack: we have to save this VALUE somewhere for when the DeepUserExceptionMsg gets decoded
+            # so use the python RID as a key, since we can't introduce a third
+            # dictionary that gets passed around everywhere.
+            cls_uid = gridToResourceUID(cls.rid)
+            cls_ref = RefUniMsg(uid=cls_uid)
+            exc_msg = ForeignExceptionUniMsg(
+                excp_cls=cls_ref,
+                excp_args=[py_term_to_uni_concept(v, new_defs, ctx) for v in args],  # type: ignore
+            )
+            ctx[defmsg.rid] = exc_msg  # type: ignore
+            return
+
         case ClassDataMsg():
             payload = class_data_to_class_payload(defmsg.data, uid, new_defs, ctx)
             uni_def = ClassDefUniMsg(uid=uid, payload=payload)
+
         case GenericAliasDataMsg():
             # TODO: needed? untested!
             origin_term = defmsg.data.origin
@@ -905,15 +902,15 @@ def py_def_to_uni_def(
                 supplied_type_args=type_args,
             )
             uni_def = ClassDefUniMsg(uid=uid, payload=payload)
-        case FunctionDataMsg():
-            payload = function_data_to_function_payload(defmsg.data, uid, new_defs, ctx)
-            uni_def = FunctionDefUniMsg(uid=uid, payload=payload)
-            if defmsg.data.qname is not None and defmsg.data.name != defmsg.data.qname:
-                cls_name = defmsg.data.qname.split(".")[0]
+        case FunctionDataMsg(ident=ident, sig=sig) as fdata:
+            payload = function_data_to_function_payload(fdata, uid, new_defs, ctx)
+            uni_def = fn_def = FunctionDefUniMsg(uid=uid, payload=payload)
+            if ident.qual is not None and ident.name != ident.qual:
+                cls_name = ident.qual.split(".")[0]
                 cls_uid = get_class_def_from_name(cls_name, ctx)
                 if cls_uid is not None:
                     uni_def = toMethodSignature(
-                        uni_def,
+                        fn_def,
                         Membership(
                             uid=cls_uid.uid, kind='instance'
                         ),  # TODO: @tali instance vs static
@@ -933,16 +930,11 @@ def py_def_to_uni_def(
         case _:
             raise ValueError(f'Unsupported resource data type {defmsg} in universal messages')
 
-    def add_def(def_msg: DefUniMsg, ctx: dict[DefnUID, DefUniMsg]):
-        assert def_msg.uid not in ctx, (
-            f"Definition {def_msg.uid} already exists in context ... this shouldn't happen"
-        )
-        if def_msg.uid not in new_defs:
-            new_defs[def_msg.uid] = def_msg
-
-    add_def(uni_def, ctx)
-
-    return uni_def
+    uid = uni_def.uid
+    assert uid not in ctx, f"Definition {uid} already exists in context ... this shouldn't happen"
+    ctx[uid] = uni_def
+    if uid not in new_defs:
+        new_defs[uid] = uni_def
 
 
 # Py Class Data -> Uni Class Payload
@@ -1037,33 +1029,33 @@ def function_data_to_function_payload(
     defs: dict[DefnUID, DefUniMsg],
     ctx: dict[DefnUID, DefUniMsg],
 ) -> FunctionPayload:
-    arg_names: set[str] = set(data.args)
     arguments: list[FunctionArgument] = []
     return_type: RefUniMsg | UnsetType = UNSET
 
-    for arg_name, arg_type in data.annos.items():
-        if arg_name == 'return':
-            ref = referentialize(py_term_to_uni_concept(arg_type, defs, ctx))
+    ident = data.ident
+    sig = data.sig
+
+    annos = sig.annos
+    defaults = sig.defaults
+
+    for arg_name in sig.pos_args + sig.key_args:
+        if arg_name in annos:
+            anno = annos[arg_name]
+            ref = referentialize(py_term_to_uni_concept(anno, defs, ctx))
             assert isinstance(ref, RefUniMsg)
-            return_type = ref
-            continue
+        else:
+            ref = None
+        optional = arg_name in defaults
+        arg = FunctionArgument(name=arg_name, type=ref, optional=optional)
+        arguments.append(arg)
 
-        ref = referentialize(py_term_to_uni_concept(arg_type, defs, ctx))
+    if ret_msg := annos.pop('return', None):
+        ref = referentialize(py_term_to_uni_concept(ret_msg, defs, ctx))
         assert isinstance(ref, RefUniMsg)
-        if arg_name not in arg_names:
-            raise ValueError(f"Argument {arg_name} not found in function data")
-        arg_names.remove(arg_name)
-        arguments.append(FunctionArgument(name=arg_name, type=ref))
-
-    # Add remaining arguments with fallback object type
-    for arg_name in arg_names:
-        if arg_name != 'self':
-            object_uid = DefnUID(world='client', resource=BUILTIN_UNI_IDS.get('Object', -1))
-            object_ref = RefUniMsg(uid=object_uid)
-            arguments.append(FunctionArgument(name=arg_name, type=object_ref))
+        return_type = ref
 
     return FunctionPayload(
-        name=data.name, doc=unsetNone(data.doc), arguments=arguments, returnType=return_type
+        name=ident.name, doc=unsetNone(sig.doc), arguments=arguments, returnType=return_type
     )
 
 
@@ -1083,3 +1075,13 @@ def object_data_to_object_payload(
         raise ValueError(f"Got obj/fun def for cls: {cls_msg}")
 
     return ObjectPayload(name=UNSET, cls=cls_ref, keys=[k for k in data.keys])
+
+
+# DUNDER_TO_TS_METHOD = {
+#     '__str__':      'toString',
+#     '__repr__':     'toString',
+#     '__contains__': 'includes',
+# }
+#
+# def py_to_ts_method_equivalent(name: str) -> str:
+#     return DUNDER_TO_TS_METHOD.get(name, name)

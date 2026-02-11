@@ -54,19 +54,20 @@ __all__ = [
     'should_log_cls',
 
     # from `core.sentinels`
-    'ArgDefault',  'FieldAbsent',  'Pending', 'Closed', 'Canceled',
-    'ARG_DEFAULT', 'FIELD_ABSENT', 'PENDING', 'CLOSED', 'CANCELED',
+    'ArgDefault',  'FieldAbsent',  'Pending', 'Closed', 'Canceled', 'OnDemand',
+    'ARG_DEFAULT', 'FIELD_ABSENT', 'PENDING', 'CLOSED', 'CANCELED', 'ON_DEMAND',
     'Sentinel', 'is_sentinel',
 
     # from `core.result`
-    'Result', 'OK_RESULT',
+    'Result',
 
     # from `core.make`
     'mklist', 'mkdict', 'mkset',
 
     # from `warpc.alias`
-    'Tup', 'Rec', 'Fn', 'SendBytes', 'EncodeFmt', 'DecodeFmt', 'MethodKind', 'AsyncMode', 'VarScope',
-    'optstr', 'strtup', 'strlist', 'typetup', 'record',
+    'Tup', 'Rec', 'Fn', 'SendBytes', 'EncodeFmt', 'DecodeFmt', 'MethodKind', 'VarScope',
+    'AsyncMode', 'HashMode',
+    'optstr', 'optint', 'strtup', 'strlist', 'typetup', 'record',
     'Name', 'Ptr', 'ID',
     'WorldID', 'LocalRID', 'GlobalRID', 'ResourceUID',
     'FrameKey', 'SystemRID', 'FrameID', 'MessageID', 'FutureID', 'Options',
@@ -88,8 +89,7 @@ __all__ = [
     'ValueT', 'AtomT', 'NumberT', 'StrLikeT', 'SingletonT', 'ContainerT', 'SequenceT', 'MappingT',
     'ResourceT', 'ObjectT', 'ClassT', 'FunctionT', 'CoroutineT', 'ModuleT', 'TypeT', 'IteratorT',
     'FutureT',
-    'ResourcesRecordT', 'MethodsT', 'ClassesTupleT',
-    'ArgsT', 'KwargsT', 'AnnotationsT', 'AttributesT',
+    'MethodsT', 'ArgsT', 'KwargsT', 'AnnotationsT', 'AttributesT',
 
     # from `warpc.fmt`
     'f_id', 'f_grid', 'f_fkey',

@@ -100,6 +100,8 @@ class LogContext:
 
 class NoLogContext:
 
+    def __call__(self, *args) -> None: ...
+
     def __bool__(self) -> bool:
         return False
 

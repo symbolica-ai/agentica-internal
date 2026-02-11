@@ -3,10 +3,10 @@
 from asyncio import Future
 from copy import copy
 from typing import BinaryIO
+from time import time_ns
 
 from ...core.log import LogBase, binary_log_dir
-from ..frame import (ICON_M, PostRequestHook, PostRequestHookFn,
-                     PreRequestHook, PreRequestHookFn, RequestHook)
+from ..frame import ICON_M
 from ..hooks import *
 from .__ import *
 
@@ -29,7 +29,7 @@ class World(LogBase, WorldP, ABC):
     __mids:   Ids
     __fids:   Ids
     __hooks:  dict[Any, RequestHook]
-    clock:    Tick
+    clock:    EventNumber
 
     simple_events: list[SimpleEvent]
     __msg_log:  BinaryIO | None
@@ -70,9 +70,9 @@ class World(LogBase, WorldP, ABC):
     # these used by DebugWorld
 
     @property
-    def tick(self) -> int:
+    def tick(self) -> Tick:
         self.clock += 1
-        return self.clock
+        return self.clock, time_ns()
 
     def add_simple_event(self, t: Tick, event: EventType) -> None:
         self.simple_events.append(SimpleEvent(t, event))
@@ -96,12 +96,14 @@ class World(LogBase, WorldP, ABC):
     def on_event(self, d: Direction, t: Tick, msg: EventMsg) -> None:
         self.add_simple_event(t, EventEvent.dir(d))
 
+    def on_channel(self, d: Direction, t: Tick, msg: ChannelMsg) -> None:
+        self.add_simple_event(t, ChannelEvent.dir(d))
+
     def on_message(self, d: Direction, t: Tick, msg: RPCMsg) -> None:
         if msg_log := self.__msg_log:
             msg_log.write(msg.to_msgpack())
             msg_log.write(BIN_MSG_SEP)
             msg_log.flush()
-        self.add_simple_event(t, MessageEvent.dir(d))
 
     def simple_history_str(self) -> str:
         return '\n'.join(map(str, self.simple_events))
@@ -307,8 +309,9 @@ class World(LogBase, WorldP, ABC):
             return GENERIC_RESOURCE_ERROR
 
     def will_hook(self, request: ResourceRequest) -> bool:
-        key = request.hook_key()
-        return key in self.__hooks
+        if hooks := self.__hooks:
+            return request.hook_key() in hooks
+        return False
 
     ############################################################################
 

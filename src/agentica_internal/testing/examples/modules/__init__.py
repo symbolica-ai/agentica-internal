@@ -2,13 +2,19 @@
 
 from types import ModuleType
 
+from ._namespace import a as namespace_a, b as namespace_b  # noqa: F401
+from ._nested import a as nested_a, b as nested_b  # noqa: F401
+
 from . import _empty as empty_module
 from . import _simple as simple_module
+from . import _nested as nested_module
+from . import _namespace as namespace_module
 
 __all__ = [
     'simple_module',
     'empty_module',
-    'manual_module',
+    'nested_module',
+    'namespace_module',
     'impostor_module_1',
     'impostor_module_2',
     'holdout_module',
@@ -44,6 +50,8 @@ MODULES = [
     simple_module,
     empty_module,
     manual_module,
+    nested_module,
+    namespace_module,
     impostor_module_1,
     impostor_module_2,
 ]

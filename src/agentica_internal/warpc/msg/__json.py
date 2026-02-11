@@ -79,7 +79,6 @@ def json_enc_hook(obj: Any) -> Any:
     return data
 
 
-
 ################################################################################
 
 def get_json_schema(obj: Any) -> dict:

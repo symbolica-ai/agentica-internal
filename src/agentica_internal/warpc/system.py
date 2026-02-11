@@ -14,8 +14,13 @@ __all__ = [
     'SRID_TO_NAME',
     'SYS_MODULES',
     'SYS_EXCEPTIONS',
+    'SYS_CLASSES',
     'to_system_id',
+    'is_sys_exc_class',
+    'sanitize_path',
     'FORBIDDEN_IDS',
+    'SYSTEM_IDS',
+    'SITE_PACKAGES',
 ]
 
 
@@ -29,8 +34,15 @@ FRB_OFFSET = 0x0FFFF
 
 SYS_MODULES: list[ModuleType] = []
 SYS_EXCEPTIONS: list[type[BaseException]] = []
+SYS_CLASSES: list[type] = []
 
 FORBIDDEN_IDS: list[int] = []
+
+SKIP_MODULES: list[str] = ['ctypes', 'sqlite3']
+
+SYSTEM_IDS: frozenset[LocalRID]
+
+SITE_PACKAGES: tuple[str]
 
 ################################################################################
 
@@ -38,8 +50,10 @@ def _init_tables():
     global SRID_TO_CLS, SRID_TO_OBJ, SRID_TO_FUN, SRID_TO_MOD
     global SRID_TO_NAME, SRID_TO_RSRC, LRID_TO_SRID
     global SYS_MODULES, SYS_EXCEPTIONS
-    global FORBIDDEN_IDS
+    global FORBIDDEN_IDS, SYSTEM_IDS, SITE_PACKAGES
     from importlib import import_module
+    from site import getusersitepackages, getsitepackages
+
 
     add_exc = SYS_EXCEPTIONS.append
     cls_items, add_cls = mklist()
@@ -53,7 +67,9 @@ def _init_tables():
 
     def add(f, val: Any, sid: int, nam: str):
         f((sid, val))
-        assert id(val) not in rids, f"DUP: {val} {sid} {nam}"
+        if id(val) in rids:
+            oid = sid - de_off[f]
+            raise RuntimeError(f"DUP SYS ID: {val} 0x{oid:X} {nam}")
         add_rid(id(val))
         add_sid(sid)
         add_val(val)
@@ -64,19 +80,25 @@ def _init_tables():
     get_fun_id = SYS_FUNCTION_ID_DICT.get
 
     cls_i, obj_i, fun_i, mod_i = CLS_OFFSET, OBJ_OFFSET, FUN_OFFSET, MOD_OFFSET
-
+    de_off = {add_cls: cls_i, add_obj: obj_i, add_fun: fun_i, add_mod: mod_i}
     add(add_obj, None, obj_i + 0, 'None')
 
     for i, prefix, mod_name in SYS_MOD_TABLE:
-        # if mod_name == 'asyncio':
-        #     mod_name = '_asyncio'  # hack for now
-        mod = import_module(mod_name)
+        if mod_name in SKIP_MODULES:
+            continue
+        try:
+            mod = import_module(mod_name)
+        except Exception as err:
+            err.add_note(f'while obtaining IDs for module {mod_name!r}')
+            P.print_exception(err)
+            continue
         add(add_mod, mod, mod_i + i, mod_name)
         for name, thing in vars(mod).items():
             if isinstance(thing, type):
                 j = get_cls_id(f'{prefix}_{name}')
                 if j is None:
                     continue
+                SYS_CLASSES.append(thing)
                 add(add_cls, thing, cls_i + j, f'{mod_name}.{name}')
                 if issubclass(thing, BaseException):
                     add_exc(thing)
@@ -127,6 +149,10 @@ def _init_tables():
     SRID_TO_RSRC = dict(zip(sids, vals))
     LRID_TO_SRID = dict(zip(rids, sids))
 
+    SYSTEM_IDS = frozenset(rids)
+
+    SITE_PACKAGES = getusersitepackages(), *getsitepackages()
+    SITE_PACKAGES = tuple(s for s in SITE_PACKAGES if type(s) is str and s)
 
 ################################################################################
 
@@ -142,11 +168,25 @@ LRID_TO_SRID: dict[LocalRID, SystemRID] = {}
 def to_system_id(obj: Any) -> SystemRID | None:
     return LRID_TO_SRID.get(id(obj))
 
+def is_sys_exc_class(cls: type) -> bool: ...
 
 ################################################################################
 
 _init_tables()
 del _init_tables
+
+is_sys_exc_class = set(SYS_EXCEPTIONS).__contains__  # type: ignore
+
+################################################################################
+
+def sanitize_path(p: str) -> str:
+    if not p: return p
+    if not p.startswith(SITE_PACKAGES): return p
+    for s in SITE_PACKAGES:
+        if p.startswith(s):
+            return f'/usr/site-packages/{s[len(p):]}'  # TODO: Windows
+    # TODO: do this for ~ as well, to become just /usr/
+    return p
 
 ################################################################################
 

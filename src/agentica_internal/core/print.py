@@ -20,10 +20,11 @@ from .log import write_out, write_err
 from .fmt import f_object_id, f_datum
 from .color import *
 from .ansi.palettes import Medium as MEDIUM
-from .debug import debug_fmt, colorize
+from .debug import debug_fmt, colorize, echoing
 from .result import Result
 
 __all__ = [
+    'echoing',
     'oprint',
     'eprint',
     'rprint',
@@ -310,7 +311,7 @@ def f_trunc(arg: object) -> str:
             kind = 'virtual ' + kind
         return colorize(f'<{kind} {name!r} @ {id(arg):x}>')
 
-    if issubclass(cls, BaseException):
+    if issubclass(cls, BaseException) and not is_virt_obj(arg):
         return f_exception(arg)
 
     name = cls.__name__

@@ -1,7 +1,5 @@
 from typing import Protocol as TypingProtocol
 
-from msgspec import UnsetType
-
 from agentica_internal.warpc.alias import *
 from agentica_internal.warpc.messages import *
 from agentica_internal.warpc.msg.resource_data import (
@@ -14,14 +12,11 @@ from agentica_internal.warpc.msg.resource_data import (
 )
 from agentica_internal.warpc.msg.rpc_event import FutureCanceledMsg as PyFutureCanceledMsg
 from agentica_internal.warpc.msg.rpc_event import FutureCompletedMsg as PyFutureCompletedMsg
-from agentica_internal.warpc.msg.rpc_legacy import LegacyResourceReplyMsg, LegacyResourceRequestMsg
 from agentica_internal.warpc.msg.term_atom import ForwardRefTypeMsg
 from agentica_internal.warpc.msg.term_exception import ExceptionMsg
 from agentica_internal.warpc.msg.term_resource import SystemResourceMsg, UserResourceMsg
-from agentica_internal.warpc.system import LRID_TO_SRID
-from agentica_internal.warpc_transcode.conv_utils import get_def_or_sysref_from_ctx
-from agentica_internal.warpc_transcode.uni_msgs import DefUniMsg
 from agentica_internal.warpc_transcode.uni_sys_id import ATOMIC_IDS
+from agentica_internal.warpc.data.identifier import Identifier
 
 from .conv_utils import *
 from .uni_msgs import *
@@ -36,6 +31,7 @@ from .uni_msgs import (
 )
 
 __all__ = ['uni_to_py']
+
 
 """
 note: also see warpc/msg/__final__.py for how message classes are finalized...
@@ -59,29 +55,22 @@ def uni_to_py(msg: UniMsg, ctx: dict[DefnUID, DefUniMsg]) -> Msg:
 def uni_to_py_rpc(msg: RpcUniMsg, ctx: dict[DefnUID, DefUniMsg]) -> RPCMsg:
     if isinstance(msg, RequestUniMsg):
         # HACK: use requestedFID for mid
-        pid, fid, mid = uni_to_py_frame_request(msg)
-
-        info = uni_to_py_request(msg, ctx)
+        fid, mid = uni_to_py_request_ids(msg)
+        req = uni_to_py_request(msg, ctx)
         defs = tuple(uni_to_ordered_py_defs(msg.defs, ctx))
 
-        return LegacyResourceRequestMsg(
-            mid=mid,
-            fid=fid,
-            pid=pid,
-            info=info,
-            defs=defs,
-        ).upgrade()  # type: ignore[arg-type]
+        return FramedRequestMsg(mid=mid, fid=fid, request=req, defs=defs)
 
     elif isinstance(msg, ResponseUniMsg):
         # HACK: mid is not known in uni response (set to fid)
-        pid, fid = uni_to_py_frame_response(msg)
-        info = uni_to_py_response(msg, ctx)
+        fid, mid = uni_to_py_response_ids(msg)
+        result_msg = uni_to_py_result(msg, ctx)
         if hasattr(msg, 'defs'):
             assert isinstance(msg, ResUniMsg), f"Got unexpected defs in response"
             defs = tuple(uni_to_ordered_py_defs(msg.defs, ctx))
         else:
             defs = ()
-        return LegacyResourceReplyMsg(mid=fid, fid=fid, pid=pid, info=info, defs=defs).upgrade()  # type: ignore[arg-type]
+        return FramedResponseMsg(mid=mid, fid=fid, result=result_msg, defs=defs)
 
     elif isinstance(msg, EventUniMsg):
         if isinstance(msg, FutureCanceledUniMsg):
@@ -95,10 +84,15 @@ def uni_to_py_rpc(msg: RpcUniMsg, ctx: dict[DefnUID, DefUniMsg]) -> RPCMsg:
                 defs = tuple(uni_to_ordered_py_defs(msg.result.defs, ctx))
             else:
                 defs = ()
-            result_msg = uni_to_py_response(msg.result, ctx)
+            result_msg = uni_to_py_result(msg.result, ctx)
             return PyFutureCompletedMsg(future_id=future_id, result=result_msg, defs=defs)
 
         raise ValueError(f'Unknown EventUniMsg: {msg}')
+    elif isinstance(msg, ChannelUniMsg):
+        value = uni_to_py_term(msg.value, ctx)
+        result = ResultMsg(value=value)
+        defs = tuple(uni_to_ordered_py_defs(msg.defs, ctx))
+        return ChannelMsg(data=result, last=msg.last, defs=defs)
 
     else:
         raise ValueError(f'Unknown RpcUniMsg: {msg}')
@@ -156,17 +150,17 @@ def uni_to_py_request(msg: RequestUniMsg, ctx: dict[DefnUID, DefUniMsg]) -> Reso
 
 
 # Uni Response -> Py Response
-def uni_to_py_response(msg: ResponseUniMsg, ctx: dict[DefnUID, DefUniMsg]) -> ResultMsg:
+def uni_to_py_result(msg: ResponseUniMsg, ctx: dict[DefnUID, DefUniMsg]) -> ResultMsg:
     if isinstance(msg, OkUniMsg):
-        return OK_MSG
+        return ResultMsg()
 
     if isinstance(msg, ResUniMsg):
         term = uni_to_py_term(msg.payload.result, ctx)
-        return ValueMsg(val=term)
+        return ResultMsg(value=term)
 
     if isinstance(msg, ErrUniMsg):
-        excp_msg = uni_to_py_term(msg.payload.error, ctx)
-        return ErrorMsg(exc=excp_msg)
+        excp_msg = exc_to_py_msg(msg.payload.error, ctx)
+        return ResultMsg(error=excp_msg)
 
     raise ValueError(f'Unsupported universal response: {msg}')
 
@@ -233,32 +227,39 @@ def uni_to_py_term(term: ConceptUniMsg, ctx: dict[DefnUID, DefUniMsg]) -> TermMs
         return TupleMsg(vs=vs)
 
     # Exceptions
-    if isinstance(term, ForeignExceptionUniMsg):
-        return ExceptionMsg(
-            cls=uni_to_py_term(term.excp_cls, ctx),
-            args=tuple(uni_to_py_term(v, ctx) for v in term.excp_args),
-            name='ForeignException',
-            loc=None,
-            stack=[],
-        )  # type: ignore[arg-type]
-    if isinstance(term, InternalErrorUniMsg):
-        return ExceptionMsg(
-            cls=SystemResourceMsg(sid=LRID_TO_SRID.get(id(Exception), 0)),
-            args=(StrMsg(v=term.error),),
-            name='Exception',
-            loc=None,
-            stack=[],
-        )  # type: ignore[arg-type]
-    if isinstance(term, GenericExceptionUniMsg):
-        return ExceptionMsg(
-            cls=SystemResourceMsg(sid=LRID_TO_SRID.get(id(Exception), 0)),
-            args=tuple(StrMsg(v=v) for v in term.excp_str_args),
-            name=term.excp_cls_name,
-            loc=None,
-            stack=list(v for v in term.excp_stack),
-        )  # type: ignore[arg-type]
+    if isinstance(term, (ForeignExceptionUniMsg, InternalErrorUniMsg, GenericExceptionUniMsg)):
+        return exc_to_py_msg(term, ctx)
 
     raise ValueError(f'Unknown universal term: {term}')
+
+
+def exc_to_py_msg(term, ctx) -> ExceptionMsg:
+    if isinstance(term, ForeignExceptionUniMsg):
+        cls_uid = term.excp_cls.uid
+        if cls_uid.world == 'client' and cls_uid.resource < 0:
+            if cls_srid := uniSysIdToSrid(cls_uid.resource):
+                return SystemExceptionMsg(
+                    exc_cls=SystemResourceMsg(sid=cls_srid),
+                    exc_args=tuple(uni_to_py_term(v, ctx) for v in term.excp_args),
+                )
+        if cls_def := get_def_or_sysref_from_ctx(ctx, term.excp_cls):
+            if isinstance(cls_def, ClassDefUniMsg):
+                cls_name = cls_def.payload.name
+                return ShallowUserExceptionMsg(
+                    ident=Identifier(cls_name),
+                    exc_str=' '.join(a.val for a in term.excp_args if isinstance(a, StrUniMsg)),
+                )
+
+    if isinstance(term, InternalErrorUniMsg):
+        return InternalExceptionMsg(error=term.error)
+
+    if isinstance(term, GenericExceptionUniMsg):
+        return ShallowUserExceptionMsg(
+            ident=Identifier(term.excp_cls_name),
+            exc_str=' '.join(term.excp_str_args),
+        )
+
+    return InternalExceptionMsg(error="Unknown error")
 
 
 # Uni Def Msg -> Py Definition Msg
@@ -446,8 +447,8 @@ def intersection_to_class_data(
     return ClassDataMsg(
         name=name,
         cls=cls_msg,
-        bases=bases,
-        methods=methods,
+        bases=bases,  # type: ignore
+        methods=methods,  # type: ignore
         qname=name,
         module="__main__",  # TODO: maybe one day module if module is not None else '__main__',
         doc=f'Protocol combining: {", ".join(base_names)}' if base_names else '',
@@ -526,8 +527,8 @@ def class_payload_to_py_data(
 
     # methods: mapping name -> resource (function def/ref)
     methods: dict[str, tuple[str, ResourceMsg]] = {}
-    if data.methods is not UNSET:
-        for m in data.methods:
+    if isinstance(uni_methods := data.methods, list):
+        for m in uni_methods:
             name = m.name
             # skip private methods
             if m.is_private is not UNSET and m.is_private:
@@ -549,8 +550,8 @@ def class_payload_to_py_data(
     return ClassDataMsg(  # type: ignore[call-arg]
         name=data.name,
         cls=cls_msg,
-        bases=tuple(bases),
-        methods=methods,
+        bases=tuple(bases),  # type: ignore
+        methods=methods,  # type: ignore
         qname=data.name,
         module="__main__",  # TODO: maybe one day "__main__" if data.module is UNSET else data.module,
         doc="" if data.doc is UNSET else data.doc,
@@ -879,8 +880,8 @@ def class_payload_to_protocol_data(
 
     # methods: mapping name -> resource (function def/ref)
     methods: dict[str, tuple[str, ResourceMsg]] = {}
-    if data.methods is not UNSET:
-        for m in data.methods:
+    if isinstance(uni_methods := data.methods, list):
+        for m in uni_methods:
             name = m.name
             # skip private methods
             if m.is_private is not UNSET and m.is_private:
@@ -896,7 +897,7 @@ def class_payload_to_protocol_data(
         name=data.name,
         cls=cls_msg,
         bases=interface_bases,  # type: ignore[arg-type]
-        methods=methods,
+        methods=methods,  # type: ignore
         qname=data.name,
         module="__main__",  # TODO: maybe one day "__main__" if data.module is UNSET else data.module,
         doc="" if data.doc is UNSET else data.doc,
@@ -981,24 +982,32 @@ def function_payload_to_py_data(
         #     class_def, ctx
         # )  # TODO: could turn this into a string annotation
 
-    return FunctionDataMsg(  # type: ignore[call-arg]
+    ident = Identifier(
         name=data.name,
-        qname=qname,
-        module="__main__",  # TODO: maybe one day "__main__" if data.module is UNSET else data.module,
-        doc=None if data.doc is UNSET else data.doc,
-        keys=(),
-        args=arg_names,
-        opt_args=opt_args,
+        qual=qname,
+        mod="__main__",  # TODO: maybe one day "__main__" if data.module is UNSET else data.module,
+    )
+
+    sig = SignatureMsg(
+        pos_args=arg_names,
+        optional=opt_args,
         pos_star=pos_star,
         annos=annos,
         defaults=defaults,
+        doc=None if data.doc is UNSET else data.doc,
+    )
+
+    return FunctionDataMsg(
+        ident=ident,
+        sig=sig,
+        # type: ignore[call-arg]
     )
 
 
 # Uni Object Payload -> Py Object Data
 def object_payload_to_py_data(
     payload: ObjectPayload, ctx: dict[DefnUID, DefUniMsg]
-) -> ObjectDataMsg | FutureDataMsg:
+) -> ObjectDataMsg | FutureDataMsg | ForwardRefDataMsg:
     if payload.cls is UNSET:
         cls_def = RefUniMsg(uid=DefnUID(world='client', resource=BUILTIN_UNI_IDS["Any"]))
     else:
@@ -1137,39 +1146,37 @@ def uniq(xs):
 
 ### Helper functions
 
-
-def uni_to_py_frame_request(req: RequestUniMsg) -> tuple[FrameID, FrameID, MessageID]:
-    pid = req.parentFID
-    fid = req.selfFID
-    mid = req.requestedFID
-
-    return pid, fid, mid
-
-
-def uni_to_py_frame_response(res: ResponseUniMsg) -> tuple[FrameID, FrameID]:
-    pid = res.parentFID
-    fid = res.selfFID
-
-    return pid, fid
+# def uni_to_ordered_py_defs(
+#     defs: list[DefUniMsg], ctx: dict[DefnUID, DefUniMsg]
+# ) -> list[DefinitionMsg]:
+#     ordered_defs, _ = order_defs(defs)
+#     py_defs: list[DefinitionMsg] = []
+#     for d in ordered_defs:
+#         try:
+#             # NOTE: this is the runtime code path, we ensure that the synths appear before the parent
+#             # but this is effectively not exercised by TS runtime so is untested
+#             synthetic_defs: list[DefUniMsg] = []
+#             res = uni_to_py_def(d, ctx, None, synthetic_defs)
+#             for d in synthetic_defs:
+#                 res = uni_to_py_def(d, ctx)
+#                 py_defs.append(res)
+#             py_defs.append(res)
+#         except NotImplementedError:
+#             raise ValueError(f"Unsupported universal def: {d}")
+#     return py_defs
 
 
 def uni_to_ordered_py_defs(
-    defs: list[DefUniMsg], ctx: dict[DefnUID, DefUniMsg]
+    uni_defs: list[DefUniMsg], ctx: dict[DefnUID, DefUniMsg]
 ) -> list[DefinitionMsg]:
-    ordered_defs, _ = order_defs(defs)
-    py_defs: list[DefinitionMsg] = []
-    for d in ordered_defs:
-        try:
-            # NOTE: this is the runtime code path, we ensure that the synths appear before the parent
-            # but this is effectively not exercised by TS runtime so is untested
-            synthetic_defs: list[DefUniMsg] = []
-            res = uni_to_py_def(d, ctx, None, synthetic_defs)
-            for d in synthetic_defs:
-                res = uni_to_py_def(d, ctx)
-                py_defs.append(res)
-            py_defs.append(res)
-        except NotImplementedError:
-            raise ValueError(f"Unsupported universal def: {d}")
+    py_defs = []
+    synthetic_defs = []
+    while uni_defs:
+        for uni_def in uni_defs:
+            py_def = uni_to_py_def(uni_def, ctx, None, synthetic_defs)
+            py_defs.append(py_def)
+        uni_defs = synthetic_defs
+        synthetic_defs = []
     return py_defs
 
 

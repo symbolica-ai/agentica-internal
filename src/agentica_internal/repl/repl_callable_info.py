@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 __all__ = [
     'ReplCallableInfo',
 ]
+from agentica_internal.cpython.function import func_annotations
 
 ################################################################################
 
@@ -28,33 +29,27 @@ class ReplCallableInfo:
     fun_stub:     str | None     = None
     args_stub:    str | None     = None
 
-    def set_from_function(self, clb: Callable, /):
+    def set_from_function(self, fun: Callable, /):
 
-        if not callable(clb):
+        if not callable(fun):
             return
 
-        from ..cpython.inspect import resolve_callable
-        from ..cpython.function import func_sig_info
+        from ..warpc.data.identifier import get_fun_identifier
+        from ..warpc.data.signature import get_signature
         from ..core.anno import anno_str
 
-        fun, skip = resolve_callable(clb)
-        sig_info = func_sig_info(fun)
-        arg_names = sig_info.all_arg_names()
-        arg_names = arg_names[skip:]
+        ident = get_fun_identifier(fun)
+        sig = get_signature(fun)
 
-        def get[T](attr: str, default: T) -> T:
-            value = getattr(clb, attr, None) or getattr(fun, attr, None)
-            return value if type(value) is type(default) else default
+        self.fun_name = ident.name
+        self.fun_qualname = ident.qualname
+        self.doc_str = sig.doc_str
+        annos = dict(func_annotations(fun))
 
-        self.fun_name = fun_name = get('__name__', '')
-        self.fun_qualname = get('__qualname__', '') or fun_name
-        self.doc_str = get('__doc__', '') or None
-        annos = get('__annotations__', {}).copy()
-
-        self.arg_names = arg_names
+        self.arg_names = arg_names = list(sig.pos_args + sig.key_args)
         self.arg_annos = {k: anno_str(annos[k]) if k in annos else 'Any' for k in arg_names}
         self.ret_anno = anno_str(annos['return']) if 'return' in annos else 'Any'
-        self.is_async = sig_info.is_async
+        self.is_async = sig.is_coro
 
     def __debug_info_str__(self) -> str:
         return f'name={self.fun_name!r} args={self.arg_names!r} ret={self.ret_anno!r}'

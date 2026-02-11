@@ -47,6 +47,8 @@ class UserResourceMsg(ResourceMsg, tag='ref'):
 
     """ABC for messages describing or referencing previously described resource terms."""
 
+    __debug_fmt_slots__ = False
+
     rid: GlobalRID
 
     @property
@@ -57,7 +59,10 @@ class UserResourceMsg(ResourceMsg, tag='ref'):
         return f_grid(self.rid)
 
     def __debug_info_str__(self) -> str:
-        return 'rid=' + f_grid(self.rid)
+        rid = getattr(self, 'rid', None)
+        if type(rid) is tuple:
+            return 'rid=' + f_grid(self.rid)
+        return ''
 
     def repr(self, deep: bool = True) -> str:
         return f'ResourceRefMsg({f_grid(self.rid)})'
@@ -75,15 +80,20 @@ class UserResourceMsg(ResourceMsg, tag='ref'):
         return self.rid[2]
 
 
-
 ################################################################################
 
 class SystemResourceMsg(ResourceMsg, tag='sys'):
+
+    __debug_fmt_slots__ = False
 
     sid: SystemRID
 
     def __repr__(self):
         return f'SystemResourceMsg(sid={f_id(self.sid)},res={self.sys_name})'
+
+    def __debug_info_str__(self) -> str:
+        sid = getattr(self, 'sid', None)
+        return f"'{self.sys_name}'" if type(sid) is int else ''
 
     @property
     def as_ref(self) -> 'SystemResourceMsg':

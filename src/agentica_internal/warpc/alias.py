@@ -12,13 +12,16 @@ __all__ = [
     'DecodeFmt',
     'MethodKind',
     'AsyncMode',
+    'HashMode',
     'Options',
     'optstr',
+    'optint',
     'strtup',
     'strlist',
     'typetup',
     'record',
     'Name',
+    'DocStr',
     'Ptr',
     'ID',
     'WorldID',
@@ -35,6 +38,7 @@ __all__ = [
 ################################################################################
 
 type optstr       = str | None
+type optint       = int | None
 type strtup       = tuple[str, ...]
 type strlist      = list[str]
 type typetup      = tuple[type, ...]
@@ -51,10 +55,12 @@ type TermFmt      = Literal['full', 'type', 'json', 'schema', 'raw']
 type EncodeFmt    = TermFmt
 type DecodeFmt    = TermFmt
 
+type DocStr       = str | None
+
 type MethodKind   = Literal['instance', 'class', 'static', None]
 
 type AsyncMode    = Literal['coro', 'future', 'sync', None]  # None means 'use server default'
-
+type HashMode     = Literal['id', 'user', None]
 type Options      = dict[str, bool | int | str | float | None]
 
 ################################################################################

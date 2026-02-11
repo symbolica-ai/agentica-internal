@@ -9,10 +9,11 @@ from typing import ClassVar as TypingClassVar
 from msgspec import UNSET, UnsetType
 
 from agentica_internal.core.print import colorize, hprint
-from agentica_internal.core.collections import bidict
+from agentica_internal.core.data import bidict
 from agentica_internal.core.log.log_flag import LogFlag
-from agentica_internal.warpc.alias import GlobalRID
+from agentica_internal.warpc.alias import GlobalRID, FrameID, MessageID
 from agentica_internal.warpc.system import LRID_TO_SRID
+
 
 from .uni_msgs import (
     ClassDefUniMsg,
@@ -26,9 +27,19 @@ from .uni_msgs import (
     TypeStringRefUniMsg,
 )
 from .uni_sys_id import BUILTIN_UNI_IDS
+from ..warpc.fmt import f_grid
+
 
 if TYPE_CHECKING:
-    from .uni_msgs import DefnUID, FunctionDefUniMsg, Membership, MethodSignatureUniMsg
+    from agentica_internal.warpc.msg.all import FramedMsg
+    from .uni_msgs import (
+        DefnUID,
+        FunctionDefUniMsg,
+        Membership,
+        MethodSignatureUniMsg,
+        RequestUniMsg,
+        ResponseUniMsg,
+    )
 
 CNV = 1048576  # conversion factor for resource IDs (=2^20)
 ORDER_MARKER = "|"
@@ -57,8 +68,15 @@ def get_def_or_sysref_from_ctx(
             # For system resources use references in place of defs
             return RefUniMsg(uid=uid)
         else:
-            raise ValueError(f"Transcoder Error: Reference not found in context: {uid}")
+            grid = f_uid_grid(uid)
+            known = ' '.join(f_uid_grid(uid) for uid in ctx.keys()) or 'none'
+            details = f"GRID  = {grid}\nUID   = {uid}\nKNOWN = {known}"
+            raise ValueError(f"Transcoder Error: Reference not found in context:\n{details}")
     return deref
+
+
+def f_uid_grid(uid: DefnUID) -> str:
+    return f_grid(resourceUIDToGrid(uid))
 
 
 def gridToResourceUID(grid: GlobalRID) -> 'DefnUID':
@@ -67,20 +85,18 @@ def gridToResourceUID(grid: GlobalRID) -> 'DefnUID':
     from .uni_msgs import DefnUID
 
     if grid[0] == -1:
-        world = 'client'
         resource_UID = grid[2]
         return DefnUID(
-            world=world,
+            world='client',
             resource=resource_UID,
         )
     else:
-        world = 'server'
         # Try to generate somewhat unique deterministic resource ID
         resource_UID = (
             int(grid[0] % CNV) * CNV * CNV + int(grid[1] % CNV) * CNV + (grid[2] % CNV) - CNV
         )
         return DefnUID(
-            world=world,
+            world='server',
             resource=resource_UID,
             py_world=grid[0],
             py_frame=grid[1],
@@ -97,7 +113,7 @@ def resourceUIDToGrid(uid: 'DefnUID') -> GlobalRID:
         assert uid.py_world is not UNSET
         assert uid.py_resource is not UNSET
         assert uid.py_frame is not UNSET
-        return (uid.py_world, uid.py_resource, uid.py_frame)
+        return (uid.py_world, uid.py_frame, uid.py_resource)
 
 
 def unsetNone[T](value: T | None) -> T | UnsetType:
@@ -820,3 +836,41 @@ def order_defs(defs: list[DefUniMsg], keys: list[Any] = []) -> tuple[list[DefUni
         ordered_keys = [key_map[definition.uid] for definition in ordered_defs]
 
     return ordered_defs, ordered_keys
+
+
+# Frame model translation
+
+################################################################################
+
+# whatever was going on here needs to be fixed in the TS SDK by adding a messageID
+type PyRPCIds = tuple[FrameID, MessageID]  # fid, mid
+type UniRequestIDs = tuple[FrameID, FrameID, FrameID]  # pid, fid, mid
+type UniResponseIDs = tuple[FrameID, FrameID]  # pid, fid
+
+################################################################################
+
+
+def py_to_uni_request_ids(msg: 'FramedMsg') -> UniRequestIDs:
+    pid, fid, mid = 0, msg.fid, msg.mid
+    return pid, 0, mid
+
+
+def uni_to_py_request_ids(req: 'RequestUniMsg') -> PyRPCIds:
+    fid = req.selfFID
+    mid = req.requestedFID
+    return fid, mid
+
+
+################################################################################
+
+
+def py_to_uni_response_ids(msg: 'FramedMsg') -> UniResponseIDs:
+    pid, fid, mid = 0, msg.fid, msg.mid
+    if fid == 0:  # originated in python?
+        fid = mid
+    return pid, fid
+
+
+def uni_to_py_response_ids(res: 'ResponseUniMsg') -> PyRPCIds:
+    fid = res.selfFID
+    return fid, fid

@@ -1,5 +1,9 @@
 # fmt: off
 
+from types import NoneType, EllipsisType, NotImplementedType
+
+from ..system import sanitize_path
+
 from .__ import *
 from .handle import ResourceHandle, get_handle
 
@@ -7,43 +11,16 @@ __all__ = [
     'ResourceData',
     'ResourceHandle',
     'get_handle',
+    'is_cheap',
+    'sanitize_path'
 ]
-
-################################################################################
-
-#
-# SNIPPETS = {
-#     'ClassMsg':           'enc.enc_cls(data.{K})            data.{K} = dec.dec_cls(self.{K})',
-#     'FunctionMsg':        'enc.enc_fun(data.{K})            data.{K} = dec.dec_fun(self.{K})',
-#     'ValueT':             'enc.enc_val(data.{K})            data.{K} = dec.dec_val(self.{K})',
-#     'MethodsMsg': 'mapdict(enc.enc_fun, data.{K})   data.{K} = mapdict(dec.dec_fun, '
-#                           'self.{K})',
-#     Rec[ResourceT]: 'mapdict(enc.enc_res, data.{K})   data.{K} = mapdict(dec.dec_fun, self.{K})',
-#     AnnotationsT:   'enc.enc_ann(data.{K})            data.{K} = dec.dec_ann(self.{K})',
-#
-# }
-#
-#     'Tup[ClassT]': CLS_TUP = 1
-#     'Tup[ClassT]': FUN_REC = 2
-#     'Tup[ClassT]': TYP_REC
-#     'Tup[ClassT]': VAL_REC
-#     'Tup[ClassT]': SEQ
-#     'Tup[ClassT]': VAL
-#     'Tup[ClassT]': TYP_REC
-#     'Tup[ClassT]': VAL_OR_NONE
-#     'Tup[ClassT]': RES_REC
-#     'Tup[ClassT]': SEQ_OR_VAL
-#
-# def compile_data_to_msg_encoder(attr: str, anno):
-#     if cls(anno) is ForwardRef:
-#
-#
 
 ################################################################################
 
 class ResourceData:
     __slots__ = ()
 
+    KIND: ClassVar[Kind] = Kind.Unknown
     STR_NAME: ClassVar[str]
     FORBIDDEN_FORM: ClassVar[ResourceT] = forbidden_object
     MSG_CLS: ClassVar['type[ResourceDataMsg]']
@@ -61,7 +38,7 @@ class ResourceData:
 
     def repr(self):
         cls = type(self)
-        if hasattr(cls, '__slots__'):
+        if hasattr(cls, SLOTS):
             dct = {}
             for slot in cls.__slots__:
                 dct[slot] = getattr(self, slot, FIELD_ABSENT)
@@ -103,3 +80,23 @@ class ResourceData:
             setattr(self, 'name', name)
             if type(getattr(self, 'qname', None)) is str:
                 setattr(self, 'qname', name)
+
+################################################################################
+
+def is_cheap(obj: Any) -> bool:
+    cls = type(obj)
+    if cls in CHEAP_TYPES: return True
+    if cls in STR_TYPES: return len(obj) < 64
+    from ..system import SYSTEM_IDS
+    if id(obj) in SYSTEM_IDS: return True
+    if cls in SEQ_TYPES and len(obj) < 8:
+        return all(is_cheap(o) for o in obj)
+    if cls is dict and len(obj) < 8:
+        return all(is_cheap(k) for k in obj.keys()) and all(is_cheap(k) for k in obj.values())
+    return False
+
+################################################################################
+
+STR_TYPES = str, bytes
+SEQ_TYPES = tuple, list, set, frozenset
+CHEAP_TYPES = int, float, NoneType, EllipsisType, NotImplementedType
