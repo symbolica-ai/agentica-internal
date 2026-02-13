@@ -4,7 +4,7 @@ from typing import Any
 
 from . import base
 
-GITHUB_ISSUES_URL = 'https://github.com/symbolca-ai/agentica-issues/issues'
+GITHUB_ISSUES_URL = 'https://github.com/symbolica-ai/agentica-python-sdk/issues'
 
 
 class ThisIsABug(base.AgenticaError):

@@ -1,14 +1,14 @@
 [project]
 name = "agentica-internal"
-version = "0.4.0"
+version = "0.4.1"
 description = "Internal Agentica libraries"
 requires-python = ">=3.12.0,<3.14.0"
 dependencies = [
     "msgspec>=0.19.0",
-    "httpx>=0.28.1",
+    "httpx>=0.28.0,<1.0.0",
     "trio>=0.31.0",
     "xxhash>=3.5.0",
-    "rich>=14.1.0",
+    "rich>=13.0.0",
     "opentelemetry-api>=1.20.0",
     "opentelemetry-sdk>=1.20.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
@@ -22,7 +22,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://www.symbolica.ai/agentica"
-Issues = "https://github.com/symbolica-ai/agentica-issues"
+Issues = "https://github.com/symbolica-ai/agentica-internal/issues"
 
 [dependency-groups]
 dev = [
